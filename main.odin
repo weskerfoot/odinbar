@@ -18,7 +18,6 @@ TextCacheItem :: struct {
   window_id: xlib.XID,
   text_width: i32,
   text_height: i32,
-  needs_update: bool
 }
 
 cache: #soa[dynamic]TextCacheItem
@@ -274,6 +273,6 @@ main :: proc() {
       }
 
       sdl2.RenderPresent(renderer)
-      sdl2.Delay(16)
+      sdl2.Delay(8)
   }
 }
