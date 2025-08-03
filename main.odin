@@ -46,6 +46,10 @@ text_set_cached :: proc(display: ^xlib.Display,
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
 
   result := TextCacheItem{win_name_surface, win_name_texture, window_id}
+  if len(cache) > 50 {
+    fmt.println("free-ing cache")
+    free_cache()
+  }
   append(&cache, result)
   return result
 }
@@ -55,6 +59,7 @@ free_cache :: proc() {
     sdl2.FreeSurface(v.surface)
     sdl2.DestroyTexture(v.texture)
   }
+  clear(&cache)
 }
 
 get_active_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> cstring {
