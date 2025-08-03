@@ -15,7 +15,9 @@ XA_WINDOW : xlib.Atom = 33
 TextCacheItem :: struct {
   surface: ^sdl2.Surface,
   texture: ^sdl2.Texture,
-  window_id: xlib.XID
+  window_id: xlib.XID,
+  text_width: i32,
+  text_height: i32
 }
 
 cache: #soa[dynamic]TextCacheItem
@@ -42,12 +44,14 @@ text_set_cached :: proc(display: ^xlib.Display,
   white : sdl2.Color = {255, 255, 255, 255}
   active_window : cstring = get_active_window_name(display, window_id)
 
-  win_name_surface : ^sdl2.Surface = ttf.RenderText_Solid(font, active_window, white)
+  win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
 
-  result := TextCacheItem{win_name_surface, win_name_texture, window_id}
+  text_width, text_height : i32
+  ttf.SizeUTF8(font, active_window, &text_width, &text_height)
+
+  result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height}
   if len(cache) > 50 {
-    fmt.println("free-ing cache")
     free_cache()
   }
   append(&cache, result)
@@ -212,7 +216,8 @@ main :: proc() {
 
       cached_texture, ok := text_get_cached(display, renderer, sans, active_window).?
 
-      rect : sdl2.Rect = {0, 0, 500, 25}
+      rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
+
       if ok {
         sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
       }
