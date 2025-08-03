@@ -68,7 +68,8 @@ free_cache :: proc() {
 
 get_active_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> cstring {
   props : xlib.XTextProperty
-  xlib.GetWMName(display, xid, &props)
+  active_window_atom := xlib.InternAtom(display, "_NET_WM_NAME", false)
+  xlib.GetTextProperty(display, xid, &props, active_window_atom)
   return cast(cstring)props.value
 }
 
@@ -196,7 +197,7 @@ main :: proc() {
   ttf.Init()
 
   white : sdl2.Color = {255, 255, 255, 255}
-  sans : ^ttf.Font = ttf.OpenFont("/usr/share/fonts/TTF/DejaVuSans.ttf", 24)
+  sans : ^ttf.Font = ttf.OpenFont("/usr/share/fonts/ubuntu/UbuntuMono-R.ttf", 24)
 
   assert (sans != nil)
 
