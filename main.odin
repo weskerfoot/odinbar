@@ -23,7 +23,10 @@ cache: #soa[dynamic]TextCacheItem
 text_get_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
                         font: ^ttf.Font,
-                        window_id: xlib.XID) -> TextCacheItem {
+                        window_id: xlib.XID) -> Maybe(TextCacheItem) {
+  if window_id == 0 {
+    return nil
+  }
   for v in cache {
     if v.window_id == window_id {
       return v
@@ -202,10 +205,12 @@ main :: proc() {
       sdl2.RenderClear(renderer)
       active_window : xlib.XID  = get_active_window(display)
 
-      cached_texture := text_get_cached(display, renderer, sans, active_window)
+      cached_texture, ok := text_get_cached(display, renderer, sans, active_window).?
 
       rect : sdl2.Rect = {0, 0, 500, 25}
-      sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
+      if ok {
+        sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
+      }
 
       sdl2.RenderPresent(renderer)
       sdl2.Delay(16)
