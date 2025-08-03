@@ -241,21 +241,23 @@ main :: proc() {
 
       if xlib.Pending(display) > 0 {
         xlib.NextEvent(display, &current_event)
-        //if current_event.xproperty.atom != 0 {
-          //fmt.println(xlib.GetAtomName(display, current_event.xproperty.atom))
-        //}
         if (current_event.type == xlib.EventType.MapNotify) {
-          fmt.println("window mapped!")
           window_id := current_event.xmap.window
-          text_set_cached(display, renderer, sans, window_id)
-        }
-        if (current_event.type == xlib.EventType.PropertyNotify) {
-          if current_event.xproperty.atom == xlib.InternAtom(display, "_NET_ACTIVE_WINDOW", false) {
-            fmt.println("window name changed")
+          if window_id != 0 {
+            text_set_cached(display, renderer, sans, window_id)
+
+            xlib.SelectInput(display,
+                             window_id,
+                             {xlib.EventMaskBits.PropertyChange,
+                              xlib.EventMaskBits.StructureNotify,
+                              xlib.EventMaskBits.SubstructureNotify})
           }
         }
-        else {
-          fmt.println("unhandled event")
+        if (current_event.type == xlib.EventType.PropertyNotify) {
+          if (current_event.xproperty.atom == xlib.InternAtom(display, "_NET_WM_NAME", false) ||
+             current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
+            text_set_cached(display, renderer, sans, current_event.xproperty.window)
+          }
         }
       }
 
