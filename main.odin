@@ -17,7 +17,8 @@ TextCacheItem :: struct {
   texture: ^sdl2.Texture,
   window_id: xlib.XID,
   text_width: i32,
-  text_height: i32
+  text_height: i32,
+  needs_update: bool
 }
 
 cache: #soa[dynamic]TextCacheItem
@@ -41,6 +42,20 @@ text_set_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
                         font: ^ttf.Font,
                         window_id: xlib.XID) -> TextCacheItem {
+
+  // If it's already in there find it and free the existing texture/surface first
+  found_existing_window := -1
+  i := 0
+  for v in cache {
+    if v.window_id == window_id {
+      sdl2.FreeSurface(v.surface)
+      sdl2.DestroyTexture(v.texture)
+      found_existing_window = i
+      break
+    }
+    i += 1
+  }
+
   white : sdl2.Color = {255, 255, 255, 255}
   active_window : cstring = get_active_window_name(display, window_id)
 
@@ -50,11 +65,17 @@ text_set_cached :: proc(display: ^xlib.Display,
   text_width, text_height : i32
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
-  result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height}
+  result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height, false}
   if len(cache) > 50 {
     free_cache()
   }
-  append(&cache, result)
+
+  if found_existing_window >= 0 {
+    cache[i] = result
+  }
+  else {
+    append(&cache, result)
+  }
   return result
 }
 
@@ -204,11 +225,38 @@ main :: proc() {
   defer ttf.Quit()
   defer free_cache()
 
+  current_event : xlib.XEvent
+
+  xlib.SelectInput(display,
+                   root,
+                   {xlib.EventMaskBits.PropertyChange,
+                    xlib.EventMaskBits.SubstructureNotify})
+
   for running {
       for sdl2.PollEvent(&event) != false {
           if event.type == sdl2.EventType.QUIT {
               running = false
           }
+      }
+
+      if xlib.Pending(display) > 0 {
+        xlib.NextEvent(display, &current_event)
+        //if current_event.xproperty.atom != 0 {
+          //fmt.println(xlib.GetAtomName(display, current_event.xproperty.atom))
+        //}
+        if (current_event.type == xlib.EventType.MapNotify) {
+          fmt.println("window mapped!")
+          window_id := current_event.xmap.window
+          text_set_cached(display, renderer, sans, window_id)
+        }
+        if (current_event.type == xlib.EventType.PropertyNotify) {
+          if current_event.xproperty.atom == xlib.InternAtom(display, "_NET_ACTIVE_WINDOW", false) {
+            fmt.println("window name changed")
+          }
+        }
+        else {
+          fmt.println("unhandled event")
+        }
       }
 
       sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 255)
