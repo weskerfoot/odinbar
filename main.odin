@@ -40,7 +40,11 @@ text_get_cached :: proc(display: ^xlib.Display,
 text_set_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
                         font: ^ttf.Font,
-                        window_id: xlib.XID) -> TextCacheItem {
+                        window_id: xlib.XID) -> Maybe(TextCacheItem) {
+
+  if window_id == 0 {
+    return nil
+  }
 
   // If it's already in there find it and free the existing texture/surface first
   found_existing_window := -1
@@ -64,7 +68,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   text_width, text_height : i32
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
-  result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height, false}
+  result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height}
   if len(cache) > 50 {
     free_cache()
   }
