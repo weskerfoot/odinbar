@@ -18,6 +18,7 @@ TextCacheItem :: struct {
   window_id: xlib.XID,
   text_width: i32,
   text_height: i32,
+  is_active: bool
 }
 
 cache: #soa[dynamic]TextCacheItem
@@ -49,11 +50,12 @@ text_set_cached :: proc(display: ^xlib.Display,
   // If it's already in there find it and free the existing texture/surface first
   found_existing_window := -1
   i := 0
-  for v in cache {
+  for &v in cache {
     if v.window_id == window_id {
       sdl2.FreeSurface(v.surface)
       sdl2.DestroyTexture(v.texture)
       found_existing_window = i
+      v.is_active = false
       break
     }
     i += 1
@@ -68,7 +70,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   text_width, text_height : i32
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
-  result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height}
+  result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height, true}
   if len(cache) > 50 {
     free_cache()
   }
@@ -235,6 +237,9 @@ main :: proc() {
                    {xlib.EventMaskBits.PropertyChange,
                     xlib.EventMaskBits.SubstructureNotify})
 
+  // FIXME, need to get a full list of active windows up front
+  // Otherwise they only get tracked when we use them
+
   for running {
       for sdl2.PollEvent(&event) != false {
           if event.type == sdl2.EventType.QUIT {
@@ -244,6 +249,15 @@ main :: proc() {
 
       if xlib.Pending(display) > 0 {
         xlib.NextEvent(display, &current_event)
+        if (current_event.type == xlib.EventType.DestroyNotify) {
+          for &v in cache {
+            if v.is_active {
+              if v.window_id == current_event.xdestroywindow.window {
+                v.is_active = false
+              }
+            }
+          }
+        }
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
           if window_id != 0 {
