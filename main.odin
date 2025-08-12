@@ -9,6 +9,15 @@ import "vendor:sdl2"
 import "vendor:sdl2/ttf"
 import "vendor:x11/xlib"
 
+handle_bad_window :: proc "c" (display: ^xlib.Display,
+                               ev: ^xlib.XErrorEvent) -> i32 {
+  return 0
+}
+
+handle_io_error :: proc "c" (display: ^xlib.Display) -> i32 {
+  return 0
+}
+
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
@@ -62,7 +71,11 @@ text_set_cached :: proc(display: ^xlib.Display,
   }
 
   white : sdl2.Color = {255, 255, 255, 255}
-  active_window : cstring = get_active_window_name(display, window_id)
+  active_window, ok_window_name := get_active_window_name(display, window_id).?
+
+  if !ok_window_name {
+    return nil
+  }
 
   win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
@@ -92,14 +105,17 @@ free_cache :: proc() {
   clear(&cache)
 }
 
-get_active_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> cstring {
+get_active_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(cstring) {
   props : xlib.XTextProperty
   active_window_atom := xlib.InternAtom(display, "_NET_WM_NAME", false)
-  xlib.GetTextProperty(display, xid, &props, active_window_atom)
+  result := xlib.GetTextProperty(display, xid, &props, active_window_atom)
+  if cast(i32)result == 0 { // Apparently this doesn't return the same type of Status as other functions?
+    return nil
+  }
   return cast(cstring)props.value
 }
 
-get_active_window :: proc(display: ^xlib.Display) -> xlib.XID {
+get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
   property := xlib.InternAtom(display, "_NET_ACTIVE_WINDOW", false)
 
   type_return :xlib.Atom
@@ -112,20 +128,24 @@ get_active_window :: proc(display: ^xlib.Display) -> xlib.XID {
 
   root := xlib.DefaultRootWindow(display)
 
-  xlib.GetWindowProperty(
-      display,
-      root,
-      property,
-      0,
-      1,
-      false,
-      XA_WINDOW,
-      &type_return,   // should be XA_WINDOW
-      &format_return, // should be 32
-      &nitems_return,
-      &bytes_left,
-      &data
-  )
+  result := xlib.GetWindowProperty(
+              display,
+              root,
+              property,
+              0,
+              1,
+              false,
+              XA_WINDOW,
+              &type_return,   // should be XA_WINDOW
+              &format_return, // should be 32
+              &nitems_return,
+              &bytes_left,
+              &data
+          )
+
+  if result != cast(i32)xlib.Status.Success {
+    return nil
+  }
 
   return (cast(^xlib.XID)data)^
 }
@@ -135,6 +155,9 @@ main :: proc() {
   display := xlib.OpenDisplay(nil)
   displayHeight := xlib.DisplayHeight(display, 0)
   displayWidth := xlib.DisplayWidth(display, 0)
+
+  xlib.SetErrorHandler(handle_bad_window)
+  xlib.SetIOErrorHandler(handle_io_error)
 
   defer xlib.CloseDisplay(display)
   screen := xlib.DefaultScreen(display)
@@ -280,17 +303,17 @@ main :: proc() {
 
       sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 255)
       sdl2.RenderClear(renderer)
-      active_window : xlib.XID  = get_active_window(display)
+      active_window, ok_window := get_active_window(display).?
 
-      cached_texture, ok := text_get_cached(display, renderer, sans, active_window).?
+      if ok_window {
+        cached_texture, ok_text := text_get_cached(display, renderer, sans, active_window).?
+        rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
+        if ok_text {
+          sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
+        }
 
-      rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
-
-      if ok {
-        sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
+        sdl2.RenderPresent(renderer)
       }
-
-      sdl2.RenderPresent(renderer)
       sdl2.Delay(8)
   }
 }
