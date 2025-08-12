@@ -18,6 +18,47 @@ handle_io_error :: proc "c" (display: ^xlib.Display) -> i32 {
   return 0
 }
 
+get_attributes :: proc(display: ^xlib.Display,
+                       window: xlib.XID) -> Maybe(xlib.XWindowAttributes) {
+  attrs : xlib.XWindowAttributes
+  if xlib.GetWindowAttributes(display, window, &attrs) == cast(i32)xlib.Status.BadWindow {
+    return nil
+  }
+  return attrs
+}
+
+cache_active_windows :: proc(display: ^xlib.Display,
+                             root_window: xlib.XID) {
+  root_ret : xlib.XID
+  parent_ret : xlib.XID
+  children_ret : [^]xlib.XID // array of pointers to windows
+  n_children_ret : u32
+  xlib.QueryTree(display, root_window, &root_ret, &parent_ret, &children_ret, &n_children_ret)
+
+  current_window : xlib.XID
+
+  defer xlib.Free(children_ret)
+
+  unviewable := xlib.WindowMapState.IsUnviewable
+  unmapped := xlib.WindowMapState.IsUnmapped
+
+  for i in 0..<n_children_ret {
+    current_window = children_ret[i]
+    if current_window == root_window {
+      continue
+    }
+    attrs, attrs_ok := get_attributes(display, current_window).?
+    if attrs_ok {
+      if attrs.map_state == unviewable || attrs.map_state == unmapped {
+        continue
+      }
+      fmt.println(attrs)
+      fmt.println(get_window_name(display, current_window))
+    }
+  }
+}
+
+
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
@@ -71,7 +112,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   }
 
   white : sdl2.Color = {255, 255, 255, 255}
-  active_window, ok_window_name := get_active_window_name(display, window_id).?
+  active_window, ok_window_name := get_window_name(display, window_id).?
 
   if !ok_window_name {
     return nil
@@ -105,7 +146,7 @@ free_cache :: proc() {
   clear(&cache)
 }
 
-get_active_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(cstring) {
+get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(cstring) {
   props : xlib.XTextProperty
   active_window_atom := xlib.InternAtom(display, "_NET_WM_NAME", false)
   result := xlib.GetTextProperty(display, xid, &props, active_window_atom)
@@ -165,6 +206,7 @@ main :: proc() {
   bar_height :u32 = 40
 
   root := xlib.RootWindow(display, screen)
+  cache_active_windows(display, root)
 
   win :xlib.Window = xlib.CreateSimpleWindow(
       display, root,
