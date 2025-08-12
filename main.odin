@@ -28,7 +28,9 @@ get_attributes :: proc(display: ^xlib.Display,
 }
 
 cache_active_windows :: proc(display: ^xlib.Display,
-                             root_window: xlib.XID) {
+                             root_window: xlib.XID,
+                             renderer: ^sdl2.Renderer,
+                             font: ^ttf.Font) {
   root_ret : xlib.XID
   parent_ret : xlib.XID
   children_ret : [^]xlib.XID // array of pointers to windows
@@ -52,8 +54,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
       if attrs.map_state == unviewable || attrs.map_state == unmapped {
         continue
       }
-      fmt.println(attrs)
-      fmt.println(get_window_name(display, current_window))
+      text_set_cached(display, renderer, font, current_window)
     }
   }
 }
@@ -206,7 +207,6 @@ main :: proc() {
   bar_height :u32 = 40
 
   root := xlib.RootWindow(display, screen)
-  cache_active_windows(display, root)
 
   win :xlib.Window = xlib.CreateSimpleWindow(
       display, root,
@@ -302,8 +302,8 @@ main :: proc() {
                    {xlib.EventMaskBits.PropertyChange,
                     xlib.EventMaskBits.SubstructureNotify})
 
-  // FIXME, need to get a full list of active windows up front
-  // Otherwise they only get tracked when we use them
+  // Gets all currently active windows and adds them to the cache
+  cache_active_windows(display, root, renderer, sans)
 
   for running {
       for sdl2.PollEvent(&event) != false {
