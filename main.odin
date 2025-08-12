@@ -274,10 +274,8 @@ main :: proc() {
         xlib.NextEvent(display, &current_event)
         if (current_event.type == xlib.EventType.DestroyNotify) {
           for &v in cache {
-            if v.is_active {
-              if v.window_id == current_event.xdestroywindow.window {
-                v.is_active = false
-              }
+            if v.is_active && v.window_id == current_event.xdestroywindow.window {
+              v.is_active = false
             }
           }
         }
@@ -295,7 +293,7 @@ main :: proc() {
         }
         if (current_event.type == xlib.EventType.PropertyNotify) {
           if (current_event.xproperty.atom == xlib.InternAtom(display, "_NET_WM_NAME", false) ||
-             current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
+              current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
             text_set_cached(display, renderer, sans, current_event.xproperty.window)
           }
         }
