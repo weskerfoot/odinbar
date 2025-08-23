@@ -1,4 +1,5 @@
 package main
+import "core:c"
 import "core:c/libc"
 import "core:fmt"
 import "core:strings"
@@ -8,6 +9,27 @@ import "core:time"
 import "vendor:sdl2"
 import "vendor:sdl2/ttf"
 import "vendor:x11/xlib"
+
+foreign import fontconfig "system:fontconfig"
+
+_FcMatrix :: struct {
+    xx : c.double,
+    xy : c.double,
+    yx : c.double,
+    yy : c.double
+}
+
+FcConfig :: struct {}
+FcPattern :: struct {}
+
+// FcPublic FcConfig * FcInitLoadConfigAndFonts (void);
+// FcPublic FcPattern * FcNameParse (const FcChar8 *name);
+
+foreign fontconfig {
+  FcBlanksCreate :: proc() ---
+  FcInitLoadConfigAndFonts :: proc() -> ^FcConfig ---
+  FcNameParse :: proc(name: ^u8) -> ^FcPattern ---
+}
 
 handle_bad_window :: proc "c" (display: ^xlib.Display,
                                ev: ^xlib.XErrorEvent) -> i32 {
@@ -58,7 +80,6 @@ cache_active_windows :: proc(display: ^xlib.Display,
     }
   }
 }
-
 
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
@@ -118,6 +139,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   if !ok_window_name {
     return nil
   }
+  fmt.println(active_window)
 
   win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
@@ -288,12 +310,13 @@ main :: proc() {
   ttf.Init()
 
   white : sdl2.Color = {255, 255, 255, 255}
-  sans : ^ttf.Font = ttf.OpenFont("/usr/share/fonts/ubuntu/UbuntuMono-R.ttf", 24)
+  sans : ^ttf.Font = ttf.OpenFont("/usr/share/fonts/droid/DroidSansFallback.ttf", 24)
 
   assert (sans != nil)
 
   defer ttf.Quit()
   defer free_cache()
+  fc_config := FcInitLoadConfigAndFonts()
 
   current_event : xlib.XEvent
 
