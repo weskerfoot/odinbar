@@ -12,23 +12,95 @@ import "vendor:x11/xlib"
 
 foreign import fontconfig "system:fontconfig"
 
-_FcMatrix :: struct {
+FcMatrix :: struct {
     xx : c.double,
     xy : c.double,
     yx : c.double,
     yy : c.double
 }
 
+FcFontSet  :: struct {
+    nfont : c.int,
+    sfont : c.int,
+    fonts : ^^FcPattern
+}
+
 FcConfig :: struct {}
 FcPattern :: struct {}
+FcCharSet :: struct{}
+FcLangSet :: struct{}
+FcRange :: struct{}
 
-// FcPublic FcConfig * FcInitLoadConfigAndFonts (void);
-// FcPublic FcPattern * FcNameParse (const FcChar8 *name);
+FcMatchKind :: enum {
+    FcMatchPattern,
+    FcMatchFont,
+    FcMatchScan,
+    FcMatchKindEnd,
+    FcMatchKindBegin = FcMatchPattern
+}
+
+FcResult :: enum {
+    FcResultMatch,
+    FcResultNoMatch,
+    FcResultTypeMismatch,
+    FcResultNoId,
+    FcResultOutOfMemory
+}
+
+FcType :: enum {
+    FcTypeUnknown = -1,
+    FcTypeVoid,
+    FcTypeInteger,
+    FcTypeDouble,
+    FcTypeString,
+    FcTypeBool,
+    FcTypeMatrix,
+    FcTypeCharSet,
+    FcTypeFTFace,
+    FcTypeLangSet,
+    FcTypeRange
+}
+
+FcObjectSet :: struct {
+    nobject: c.int,
+    sobject: c.int,
+    objects: ^^c.char
+}
+
+FcValueType :: struct #raw_union {
+  s: ^c.uchar,
+	i: c.int,
+	b: c.int,
+	d: c.double,
+	m: ^FcMatrix,
+	c: ^FcCharSet,
+  f: rawptr,
+  l: ^FcLangSet,
+	r: ^FcRange
+}
+
+FcValue :: struct {
+  type: FcType,
+  u: FcValueType
+}
 
 foreign fontconfig {
   FcBlanksCreate :: proc() ---
   FcInitLoadConfigAndFonts :: proc() -> ^FcConfig ---
-  FcNameParse :: proc(name: ^u8) -> ^FcPattern ---
+  FcNameParse :: proc(name: ^c.char) -> ^FcPattern ---
+  FcConfigSubstitute :: proc(config: ^FcConfig, p: ^FcPattern, kind: FcMatchKind) ---
+  FcDefaultSubstitute :: proc(pattern: ^FcPattern) ---
+  FcFontSetCreate :: proc() -> ^FcFontSet ---
+  FcObjectSetBuild :: proc(first: ^c.char, #c_vararg args: ..any) -> ^FcObjectSet ---
+  FcFontSort :: proc(config: ^FcConfig, p: ^FcPattern, trim: c.int, csp: ^^FcCharSet, result: ^FcResult) -> ^FcFontSet ---
+  FcFontRenderPrepare :: proc(config: ^FcConfig, pat: ^FcPattern, font: ^FcPattern) -> ^FcPattern ---
+  FcFontSetAdd :: proc(s: ^FcFontSet, font: ^FcPattern) -> c.int ---
+  FcFontSetSortDestroy :: proc(fs: ^FcFontSet) ---
+  FcPatternDestroy :: proc(p: ^FcPattern) ---
+  FcFontSetDestroy :: proc(s: ^FcFontSet) ---
+  FcObjectSetDestroy :: proc(os: ^FcObjectSet) ---
+  FcPatternFilter :: proc(p: ^FcPattern, os: ^FcObjectSet) -> ^FcPattern ---
+  FcPatternGet :: proc(p: ^FcPattern, object: ^c.char, id: c.int, v: ^FcValue) -> FcResult ---
 }
 
 handle_bad_window :: proc "c" (display: ^xlib.Display,
@@ -310,13 +382,62 @@ main :: proc() {
   ttf.Init()
 
   white : sdl2.Color = {255, 255, 255, 255}
-  sans : ^ttf.Font = ttf.OpenFont("/usr/share/fonts/droid/DroidSansFallback.ttf", 24)
-
-  assert (sans != nil)
+  ttf_font : ^ttf.Font
 
   defer ttf.Quit()
   defer free_cache()
   fc_config := FcInitLoadConfigAndFonts()
+  font : cstring = "Droid Sans Fallback"
+  pat := FcNameParse(cast(^c.char)font)
+  result : FcResult
+
+  FcConfigSubstitute(fc_config, pat, FcMatchKind.FcMatchPattern)
+  FcDefaultSubstitute(pat)
+  fs := FcFontSetCreate()
+  os := FcObjectSetBuild(cast(^u8)strings.clone_to_cstring("family"),
+                         strings.clone_to_cstring("style"),
+                         strings.clone_to_cstring("file"),
+                         nil)
+
+  font_patterns: ^FcFontSet = FcFontSort(fc_config, pat, 1, nil, &result)
+
+  if font_patterns == nil || font_patterns.nfont == 0 {
+    fmt.panicf("No fonts configured on your system\n")
+  }
+
+  font_pattern: ^FcPattern = FcFontRenderPrepare(fc_config, pat, font_patterns.fonts^)
+
+  if font_pattern != nil {
+    FcFontSetAdd(fs, font_pattern)
+  }
+  else {
+    fmt.panicf("Could not prepare matched font for loading\n")
+  }
+
+  FcFontSetSortDestroy(font_patterns)
+  FcPatternDestroy(pat)
+
+  if fs != nil {
+    if fs.nfont > 0 {
+      v: FcValue
+      font: ^FcPattern = FcPatternFilter(fs.fonts^, os)
+      FcPatternGet(font, cast(^u8)strings.clone_to_cstring("file"), 0, &v)
+      if v.u.f != nil {
+        found_font := cast(cstring)v.u.f
+        fmt.println(found_font)
+        ttf_font = ttf.OpenFont(found_font, 24)
+        FcPatternDestroy(font)
+      }
+      FcFontSetDestroy(fs)
+    }
+  }
+  else {
+    fmt.panicf("No usable fonts on the system, check the font family")
+  }
+
+  if os != nil {
+    FcObjectSetDestroy(os)
+  }
 
   current_event : xlib.XEvent
 
@@ -326,7 +447,7 @@ main :: proc() {
                     xlib.EventMaskBits.SubstructureNotify})
 
   // Gets all currently active windows and adds them to the cache
-  cache_active_windows(display, root, renderer, sans)
+  cache_active_windows(display, root, renderer, ttf_font)
 
   for running {
       for sdl2.PollEvent(&event) != false {
@@ -347,7 +468,7 @@ main :: proc() {
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
           if window_id != 0 {
-            text_set_cached(display, renderer, sans, window_id)
+            text_set_cached(display, renderer, ttf_font, window_id)
 
             xlib.SelectInput(display,
                              window_id,
@@ -359,7 +480,7 @@ main :: proc() {
         if (current_event.type == xlib.EventType.PropertyNotify) {
           if (current_event.xproperty.atom == xlib.InternAtom(display, "_NET_WM_NAME", false) ||
               current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
-            text_set_cached(display, renderer, sans, current_event.xproperty.window)
+            text_set_cached(display, renderer, ttf_font, current_event.xproperty.window)
           }
         }
       }
@@ -369,7 +490,7 @@ main :: proc() {
       active_window, ok_window := get_active_window(display).?
 
       if ok_window {
-        cached_texture, ok_text := text_get_cached(display, renderer, sans, active_window).?
+        cached_texture, ok_text := text_get_cached(display, renderer, ttf_font, active_window).?
         rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
         if ok_text {
           sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
