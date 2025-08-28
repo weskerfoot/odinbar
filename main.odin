@@ -13,6 +13,8 @@ import "vendor:x11/xlib"
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
+preferred_font :cstring = "Arial"
+
 TextCacheItem :: struct {
   surface: ^sdl2.Surface,
   texture: ^sdl2.Texture,
@@ -140,8 +142,7 @@ get_attributes :: proc(display: ^xlib.Display,
 
 cache_active_windows :: proc(display: ^xlib.Display,
                              root_window: xlib.XID,
-                             renderer: ^sdl2.Renderer,
-                             font: ^ttf.Font) {
+                             renderer: ^sdl2.Renderer) {
   root_ret : xlib.XID
   parent_ret : xlib.XID
   children_ret : [^]xlib.XID // array of pointers to windows
@@ -294,8 +295,7 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
 
 get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   fc_config := FcInitLoadConfigAndFonts()
-  font : cstring = "Times New Roman"
-  pat := FcNameParse(cast(^c.char)font)
+  pat := FcNameParse(cast(^c.char)preferred_font)
   charset := FcCharSetCreate()
   result : FcResult
 
@@ -380,9 +380,9 @@ main :: proc() {
 
   win :xlib.Window = xlib.CreateSimpleWindow(
       display, root,
-      0, 0,                       // x, y
-      cast(u32)screen_width, bar_height,  // width, height
-      0,                          // border width
+      0, 0, // x, y
+      cast(u32)screen_width, bar_height, // width, height
+      0, // border width
       xlib.BlackPixel(display, screen),
       xlib.BlackPixel(display, screen)
   )
@@ -458,13 +458,9 @@ main :: proc() {
   ttf.Init()
 
   white : sdl2.Color = {255, 255, 255, 255}
-  ttf_font : ^ttf.Font
 
   defer ttf.Quit()
   defer free_cache()
-  font : cstring = "Times New Roman"
-  test_text := strings.clone_to_cstring("this is a test べて")
-  get_matching_font(test_text, &ttf_font)
 
   current_event : xlib.XEvent
 
@@ -474,7 +470,7 @@ main :: proc() {
                     xlib.EventMaskBits.SubstructureNotify})
 
   // Gets all currently active windows and adds them to the cache
-  cache_active_windows(display, root, renderer, ttf_font)
+  cache_active_windows(display, root, renderer)
 
   for running {
       for sdl2.PollEvent(&event) != false {
@@ -512,7 +508,7 @@ main :: proc() {
         }
       }
 
-      sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 255)
+      sdl2.SetRenderDrawColor(renderer, 0, 0, 0, 255)
       sdl2.RenderClear(renderer)
       active_window, ok_window := get_active_window(display).?
 
