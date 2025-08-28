@@ -10,6 +10,19 @@ import "vendor:sdl2"
 import "vendor:sdl2/ttf"
 import "vendor:x11/xlib"
 
+XA_CARDINAL : xlib.Atom = 6
+XA_WINDOW : xlib.Atom = 33
+
+TextCacheItem :: struct {
+  surface: ^sdl2.Surface,
+  texture: ^sdl2.Texture,
+  window_id: xlib.XID,
+  text_width: i32,
+  text_height: i32,
+  is_active: bool,
+  font: ^ttf.Font
+}
+
 foreign import fontconfig "system:fontconfig"
 
 FcMatrix :: struct {
@@ -101,6 +114,10 @@ foreign fontconfig {
   FcObjectSetDestroy :: proc(os: ^FcObjectSet) ---
   FcPatternFilter :: proc(p: ^FcPattern, os: ^FcObjectSet) -> ^FcPattern ---
   FcPatternGet :: proc(p: ^FcPattern, object: ^c.char, id: c.int, v: ^FcValue) -> FcResult ---
+  FcCharSetCreate :: proc() -> ^FcCharSet ---
+  FcUtf8ToUcs4 :: proc(src_orig: ^c.char, dst: ^c.uint, len: c.int) -> c.int ---
+  FcCharSetAddChar :: proc(fcs: ^FcCharSet, ucs4: c.uint) -> c.int ---
+  FcPatternAddCharSet :: proc(p: ^FcPattern, object: ^c.char, cs: ^FcCharSet) -> c.int ---
 }
 
 handle_bad_window :: proc "c" (display: ^xlib.Display,
@@ -148,28 +165,15 @@ cache_active_windows :: proc(display: ^xlib.Display,
       if attrs.map_state == unviewable || attrs.map_state == unmapped {
         continue
       }
-      text_set_cached(display, renderer, font, current_window)
+      text_set_cached(display, renderer, current_window)
     }
   }
-}
-
-XA_CARDINAL : xlib.Atom = 6
-XA_WINDOW : xlib.Atom = 33
-
-TextCacheItem :: struct {
-  surface: ^sdl2.Surface,
-  texture: ^sdl2.Texture,
-  window_id: xlib.XID,
-  text_width: i32,
-  text_height: i32,
-  is_active: bool
 }
 
 cache: #soa[dynamic]TextCacheItem
 
 text_get_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
-                        font: ^ttf.Font,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
   if window_id == 0 {
     return nil
@@ -179,12 +183,11 @@ text_get_cached :: proc(display: ^xlib.Display,
       return v
     }
   }
-  return text_set_cached(display, renderer, font, window_id)
+  return text_set_cached(display, renderer, window_id)
 }
 
 text_set_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
-                        font: ^ttf.Font,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
 
   if window_id == 0 {
@@ -213,13 +216,16 @@ text_set_cached :: proc(display: ^xlib.Display,
   }
   fmt.println(active_window)
 
+  font: ^ttf.Font
+  get_matching_font(active_window, &font)
+
   win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
 
   text_width, text_height : i32
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
-  result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height, true}
+  result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height, true, font}
   if len(cache) > 50 {
     free_cache()
   }
@@ -284,6 +290,76 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
   }
 
   return (cast(^xlib.XID)data)^
+}
+
+get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
+  fc_config := FcInitLoadConfigAndFonts()
+  font : cstring = "Times New Roman"
+  pat := FcNameParse(cast(^c.char)font)
+  charset := FcCharSetCreate()
+  result : FcResult
+
+  test_text := cast(^u8)text
+  ucs4: c.uint
+  p: ^c.uchar = cast(^c.uchar)test_text
+
+  for p^ != 0 {
+    len : c.int = FcUtf8ToUcs4(p, &ucs4, cast(i32)libc.strlen(cast(cstring)p))
+    if len <= 0 {
+      break
+    }
+    FcCharSetAddChar(charset, ucs4)
+    p = cast(^c.uchar)(cast(uintptr)(cast(i32)cast(uintptr)p + len))
+  }
+
+  FcPatternAddCharSet(pat, cast(^u8)strings.clone_to_cstring("charset"), charset)
+
+  FcConfigSubstitute(fc_config, pat, FcMatchKind.FcMatchPattern)
+  FcDefaultSubstitute(pat)
+  fs := FcFontSetCreate()
+  os := FcObjectSetBuild(cast(^u8)strings.clone_to_cstring("family"),
+                         strings.clone_to_cstring("style"),
+                         strings.clone_to_cstring("file"),
+                         nil)
+
+  font_patterns: ^FcFontSet = FcFontSort(fc_config, pat, 1, nil, &result)
+
+  if font_patterns == nil || font_patterns.nfont == 0 {
+    fmt.panicf("No fonts configured on your system\n")
+  }
+
+  font_pattern: ^FcPattern = FcFontRenderPrepare(fc_config, pat, font_patterns.fonts^)
+
+  if font_pattern != nil {
+    FcFontSetAdd(fs, font_pattern)
+  }
+  else {
+    fmt.panicf("Could not prepare matched font for loading\n")
+  }
+
+  FcFontSetSortDestroy(font_patterns)
+  FcPatternDestroy(pat)
+
+  if fs != nil {
+    if fs.nfont > 0 {
+      v: FcValue
+      font: ^FcPattern = FcPatternFilter(fs.fonts^, os)
+      FcPatternGet(font, cast(^u8)strings.clone_to_cstring("file"), 0, &v)
+      if v.u.f != nil {
+        found_font := cast(cstring)v.u.f
+        ttf_font^ = ttf.OpenFont(found_font, 24)
+        FcPatternDestroy(font)
+      }
+      FcFontSetDestroy(fs)
+    }
+  }
+  else {
+    fmt.panicf("No usable fonts on the system, check the font family")
+  }
+
+  if os != nil {
+    FcObjectSetDestroy(os)
+  }
 }
 
 main :: proc() {
@@ -386,58 +462,9 @@ main :: proc() {
 
   defer ttf.Quit()
   defer free_cache()
-  fc_config := FcInitLoadConfigAndFonts()
-  font : cstring = "Droid Sans Fallback"
-  pat := FcNameParse(cast(^c.char)font)
-  result : FcResult
-
-  FcConfigSubstitute(fc_config, pat, FcMatchKind.FcMatchPattern)
-  FcDefaultSubstitute(pat)
-  fs := FcFontSetCreate()
-  os := FcObjectSetBuild(cast(^u8)strings.clone_to_cstring("family"),
-                         strings.clone_to_cstring("style"),
-                         strings.clone_to_cstring("file"),
-                         nil)
-
-  font_patterns: ^FcFontSet = FcFontSort(fc_config, pat, 1, nil, &result)
-
-  if font_patterns == nil || font_patterns.nfont == 0 {
-    fmt.panicf("No fonts configured on your system\n")
-  }
-
-  font_pattern: ^FcPattern = FcFontRenderPrepare(fc_config, pat, font_patterns.fonts^)
-
-  if font_pattern != nil {
-    FcFontSetAdd(fs, font_pattern)
-  }
-  else {
-    fmt.panicf("Could not prepare matched font for loading\n")
-  }
-
-  FcFontSetSortDestroy(font_patterns)
-  FcPatternDestroy(pat)
-
-  if fs != nil {
-    if fs.nfont > 0 {
-      v: FcValue
-      font: ^FcPattern = FcPatternFilter(fs.fonts^, os)
-      FcPatternGet(font, cast(^u8)strings.clone_to_cstring("file"), 0, &v)
-      if v.u.f != nil {
-        found_font := cast(cstring)v.u.f
-        fmt.println(found_font)
-        ttf_font = ttf.OpenFont(found_font, 24)
-        FcPatternDestroy(font)
-      }
-      FcFontSetDestroy(fs)
-    }
-  }
-  else {
-    fmt.panicf("No usable fonts on the system, check the font family")
-  }
-
-  if os != nil {
-    FcObjectSetDestroy(os)
-  }
+  font : cstring = "Times New Roman"
+  test_text := strings.clone_to_cstring("this is a test べて")
+  get_matching_font(test_text, &ttf_font)
 
   current_event : xlib.XEvent
 
@@ -468,7 +495,7 @@ main :: proc() {
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
           if window_id != 0 {
-            text_set_cached(display, renderer, ttf_font, window_id)
+            text_set_cached(display, renderer, window_id)
 
             xlib.SelectInput(display,
                              window_id,
@@ -480,7 +507,7 @@ main :: proc() {
         if (current_event.type == xlib.EventType.PropertyNotify) {
           if (current_event.xproperty.atom == xlib.InternAtom(display, "_NET_WM_NAME", false) ||
               current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
-            text_set_cached(display, renderer, ttf_font, current_event.xproperty.window)
+            text_set_cached(display, renderer, current_event.xproperty.window)
           }
         }
       }
@@ -490,7 +517,7 @@ main :: proc() {
       active_window, ok_window := get_active_window(display).?
 
       if ok_window {
-        cached_texture, ok_text := text_get_cached(display, renderer, ttf_font, active_window).?
+        cached_texture, ok_text := text_get_cached(display, renderer, active_window).?
         rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
         if ok_text {
           sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
