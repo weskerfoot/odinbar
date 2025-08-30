@@ -13,7 +13,8 @@ import "vendor:x11/xlib"
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
-preferred_font :cstring = "Arial"
+preferred_font: cstring = "Hack"
+fallback_font: ^ttf.Font
 
 TextCacheItem :: struct {
   surface: ^sdl2.Surface,
@@ -325,7 +326,9 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   font_patterns: ^FcFontSet = FcFontSort(fc_config, pat, 1, nil, &result)
 
   if font_patterns == nil || font_patterns.nfont == 0 {
-    fmt.panicf("No fonts configured on your system\n")
+    fmt.println("No fonts configured on your system\n")
+    ttf_font^ = fallback_font
+    return
   }
 
   font_pattern: ^FcPattern = FcFontRenderPrepare(fc_config, pat, font_patterns.fonts^)
@@ -334,7 +337,9 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
     FcFontSetAdd(fs, font_pattern)
   }
   else {
-    fmt.panicf("Could not prepare matched font for loading\n")
+    fmt.println("Could not prepare matched font for loading\n")
+    ttf_font^ = fallback_font
+    return
   }
 
   FcFontSetSortDestroy(font_patterns)
@@ -347,7 +352,7 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
       FcPatternGet(font, cast(^u8)strings.clone_to_cstring("file"), 0, &v)
       if v.u.f != nil {
         found_font := cast(cstring)v.u.f
-        ttf_font^ = ttf.OpenFont(found_font, 24)
+        ttf_font^ = ttf.OpenFont(found_font, 18)
         FcPatternDestroy(font)
       }
       FcFontSetDestroy(fs)
@@ -375,6 +380,8 @@ main :: proc() {
   screen := xlib.DefaultScreen(display)
   screen_width := xlib.DisplayWidth(display, screen)
   bar_height :u32 = 40
+
+  get_matching_font("abcdefg", &fallback_font)
 
   root := xlib.RootWindow(display, screen)
 
