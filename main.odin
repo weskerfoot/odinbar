@@ -142,6 +142,7 @@ get_attributes :: proc(display: ^xlib.Display,
 }
 
 cache_active_windows :: proc(display: ^xlib.Display,
+                             fc_config: ^FcConfig,
                              root_window: xlib.XID,
                              renderer: ^sdl2.Renderer) {
   root_ret : xlib.XID
@@ -167,7 +168,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
       if attrs.map_state == unviewable || attrs.map_state == unmapped {
         continue
       }
-      text_set_cached(display, renderer, current_window)
+      text_set_cached(display, fc_config, renderer, current_window)
     }
   }
 }
@@ -175,6 +176,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
 cache: #soa[dynamic]TextCacheItem
 
 text_get_cached :: proc(display: ^xlib.Display,
+                        fc_config: ^FcConfig,
                         renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
   if window_id == 0 {
@@ -185,10 +187,11 @@ text_get_cached :: proc(display: ^xlib.Display,
       return v
     }
   }
-  return text_set_cached(display, renderer, window_id)
+  return text_set_cached(display, fc_config, renderer, window_id)
 }
 
 text_set_cached :: proc(display: ^xlib.Display,
+                        fc_config: ^FcConfig,
                         renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
 
@@ -214,12 +217,12 @@ text_set_cached :: proc(display: ^xlib.Display,
   active_window, ok_window_name := get_window_name(display, window_id).?
 
   if !ok_window_name {
+    fmt.println(window_id, " had a nil window_name value")
     return nil
   }
-  fmt.println(active_window)
 
   font: ^ttf.Font
-  get_matching_font(active_window, &font)
+  get_matching_font(fc_config, active_window, &font)
 
   win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
@@ -294,8 +297,7 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
   return (cast(^xlib.XID)data)^
 }
 
-get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
-  fc_config := FcInitLoadConfigAndFonts()
+get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, ttf_font: ^^ttf.Font) {
   pat := FcNameParse(cast(^c.char)preferred_font)
   charset := FcCharSetCreate()
   result : FcResult
@@ -381,7 +383,9 @@ main :: proc() {
   screen_width := xlib.DisplayWidth(display, screen)
   bar_height :u32 = 40
 
-  get_matching_font("abcdefg", &fallback_font)
+  fc_config := FcInitLoadConfigAndFonts()
+
+  get_matching_font(fc_config, "abcdefg", &fallback_font)
 
   root := xlib.RootWindow(display, screen)
 
@@ -477,7 +481,7 @@ main :: proc() {
                     xlib.EventMaskBits.SubstructureNotify})
 
   // Gets all currently active windows and adds them to the cache
-  cache_active_windows(display, root, renderer)
+  cache_active_windows(display, fc_config, root, renderer)
 
   for running {
       for sdl2.PollEvent(&event) != false {
@@ -498,7 +502,14 @@ main :: proc() {
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
           if window_id != 0 {
-            text_set_cached(display, renderer, window_id)
+            text_set_cached(display, fc_config, renderer, window_id)
+
+            fmt.println("======")
+            for k in cache {
+              if k.is_active {
+                fmt.println(get_window_name(display, k.window_id))
+              }
+            }
 
             xlib.SelectInput(display,
                              window_id,
@@ -510,7 +521,7 @@ main :: proc() {
         if (current_event.type == xlib.EventType.PropertyNotify) {
           if (current_event.xproperty.atom == xlib.InternAtom(display, "_NET_WM_NAME", false) ||
               current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
-            text_set_cached(display, renderer, current_event.xproperty.window)
+            text_set_cached(display, fc_config, renderer, current_event.xproperty.window)
           }
         }
       }
@@ -520,7 +531,7 @@ main :: proc() {
       active_window, ok_window := get_active_window(display).?
 
       if ok_window {
-        cached_texture, ok_text := text_get_cached(display, renderer, active_window).?
+        cached_texture, ok_text := text_get_cached(display, fc_config, renderer, active_window).?
         rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
         if ok_text {
           sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
