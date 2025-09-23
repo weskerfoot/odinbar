@@ -180,6 +180,7 @@ text_get_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
   if window_id == 0 {
+    fmt.println("got a window id 0")
     return nil
   }
   for v in cache {
@@ -187,6 +188,7 @@ text_get_cached :: proc(display: ^xlib.Display,
       return v
     }
   }
+  fmt.println("value was not found in cache, setting it first")
   return text_set_cached(display, fc_config, renderer, window_id)
 }
 
@@ -196,6 +198,7 @@ text_set_cached :: proc(display: ^xlib.Display,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
 
   if window_id == 0 {
+    fmt.println("window id was 0")
     return nil
   }
 
@@ -221,6 +224,11 @@ text_set_cached :: proc(display: ^xlib.Display,
     return nil
   }
 
+  if active_window == "" {
+    fmt.println(window_id, " had a an empty window_name value")
+    return nil
+  }
+
   font: ^ttf.Font
   get_matching_font(fc_config, active_window, &font)
 
@@ -231,6 +239,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
   result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height, true, font}
+
   if len(cache) > 50 {
     free_cache()
   }
@@ -241,6 +250,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   else {
     append(&cache, result)
   }
+
   return result
 }
 
@@ -535,6 +545,9 @@ main :: proc() {
         rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
         if ok_text {
           sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
+        }
+        if !ok_text {
+          fmt.println("Failed to get any text to render!")
         }
 
         sdl2.RenderPresent(renderer)
