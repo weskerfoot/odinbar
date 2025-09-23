@@ -531,7 +531,10 @@ main :: proc() {
         if (current_event.type == xlib.EventType.PropertyNotify) {
           if (current_event.xproperty.atom == xlib.InternAtom(display, "_NET_WM_NAME", false) ||
               current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
-            text_set_cached(display, fc_config, renderer, current_event.xproperty.window)
+            window_id := current_event.xproperty.window
+            if window_id != 0 {
+              text_set_cached(display, fc_config, renderer, window_id)
+            }
           }
         }
       }
@@ -542,8 +545,8 @@ main :: proc() {
 
       if ok_window {
         cached_texture, ok_text := text_get_cached(display, fc_config, renderer, active_window).?
-        rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
         if ok_text {
+          rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
           sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
         }
         if !ok_text {
