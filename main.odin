@@ -180,7 +180,6 @@ text_get_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
   if window_id == 0 {
-    fmt.println("got a window id 0")
     return nil
   }
   for v in cache {
@@ -188,7 +187,6 @@ text_get_cached :: proc(display: ^xlib.Display,
       return v
     }
   }
-  fmt.println("value was not found in cache, setting it first")
   return text_set_cached(display, fc_config, renderer, window_id)
 }
 
@@ -206,7 +204,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   found_existing_window := -1
   i := 0
   for &v in cache {
-    if v.window_id == window_id {
+    if v.window_id == window_id && v.is_active {
       sdl2.FreeSurface(v.surface)
       sdl2.DestroyTexture(v.texture)
       found_existing_window = i
@@ -220,12 +218,10 @@ text_set_cached :: proc(display: ^xlib.Display,
   active_window, ok_window_name := get_window_name(display, window_id).?
 
   if !ok_window_name {
-    fmt.println(window_id, " had a nil window_name value")
     return nil
   }
 
   if active_window == "" {
-    fmt.println(window_id, " had a an empty window_name value")
     return nil
   }
 
@@ -255,9 +251,10 @@ text_set_cached :: proc(display: ^xlib.Display,
 }
 
 free_cache :: proc() {
-  for v in cache {
+  for &v in cache {
     sdl2.FreeSurface(v.surface)
     sdl2.DestroyTexture(v.texture)
+    v.is_active = false
   }
   clear(&cache)
 }
@@ -470,8 +467,8 @@ main :: proc() {
   xlib.MapWindow(display, win)
   xlib.Flush(display)
 
-  renderer := sdl2.CreateRenderer(sdl_window, -1, {sdl2.RendererFlags.SOFTWARE});
-  defer sdl2.DestroyRenderer(renderer);
+  renderer := sdl2.CreateRenderer(sdl_window, -1, {sdl2.RendererFlags.SOFTWARE})
+  defer sdl2.DestroyRenderer(renderer)
 
   running : bool = true
   event : sdl2.Event
