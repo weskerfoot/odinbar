@@ -183,7 +183,7 @@ text_get_cached :: proc(display: ^xlib.Display,
     return nil
   }
   for v in cache {
-    if v.window_id == window_id {
+    if v.window_id == window_id && v.is_active {
       return v
     }
   }
