@@ -180,6 +180,7 @@ text_get_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
   if window_id == 0 {
+    fmt.println("got window_id == 0 in text_get_cached")
     return nil
   }
   for v in cache {
@@ -196,7 +197,7 @@ text_set_cached :: proc(display: ^xlib.Display,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
 
   if window_id == 0 {
-    fmt.println("window id was 0")
+    fmt.println("got window_id == 0 in text_set_cached")
     return nil
   }
 
@@ -205,10 +206,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   i := 0
   for &v in cache {
     if v.window_id == window_id && v.is_active {
-      sdl2.FreeSurface(v.surface)
-      sdl2.DestroyTexture(v.texture)
       found_existing_window = i
-      v.is_active = false
       break
     }
     i += 1
@@ -502,6 +500,9 @@ main :: proc() {
         if (current_event.type == xlib.EventType.DestroyNotify) {
           for &v in cache {
             if v.is_active && v.window_id == current_event.xdestroywindow.window {
+              fmt.println("Freeing window from cache")
+              sdl2.FreeSurface(v.surface)
+              sdl2.DestroyTexture(v.texture)
               v.is_active = false
             }
           }
@@ -512,9 +513,9 @@ main :: proc() {
             text_set_cached(display, fc_config, renderer, window_id)
 
             fmt.println("======")
-            for k in cache {
-              if k.is_active {
-                fmt.println(get_window_name(display, k.window_id))
+            for v in cache {
+              if v.is_active {
+                fmt.println(get_window_name(display, v.window_id))
               }
             }
 
