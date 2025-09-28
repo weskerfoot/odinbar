@@ -549,9 +549,8 @@ main :: proc() {
 
         if current_event.type == xlib.EventType.KeyPress {
           if xlib.LookupKeysym(&current_event.xkey, 0) == xlib.KeySym.XK_v {
-            fmt.println(posix.environ)
-            libc.system("cd /home/wes/odinbar && make")
-            linux.execve("/home/wes/odinbar/odinbar", nil, posix.environ)
+            libc.system("cd ~/.odinbar && make")
+            linux.execve("~/.odinbar/odinbar", nil, posix.environ)
           }
         }
       }
