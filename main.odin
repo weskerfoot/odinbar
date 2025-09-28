@@ -392,6 +392,18 @@ main :: proc() {
 
   fc_config := FcInitLoadConfigAndFonts()
 
+  // For expanding path to odinbar
+  odinbar_wordexp :posix.wordexp_t
+  odinbar_path :cstring = "~/.odinbar/odinbar"
+  posix.wordexp(odinbar_path, &odinbar_wordexp, {})
+  odinbar_path_expanded :cstring
+  if odinbar_wordexp.we_wordc >= 1 {
+    odinbar_path_expanded = cast(cstring)odinbar_wordexp.we_wordv[0]
+  }
+  else {
+    odinbar_path_expanded = odinbar_path
+  }
+
   get_matching_font(fc_config, "abcdefg", &fallback_font)
 
   root := xlib.RootWindow(display, screen)
@@ -549,8 +561,7 @@ main :: proc() {
 
         if current_event.type == xlib.EventType.KeyPress {
           if xlib.LookupKeysym(&current_event.xkey, 0) == xlib.KeySym.XK_v {
-            libc.system("cd ~/.odinbar && make")
-            linux.execve("~/.odinbar/odinbar", nil, posix.environ)
+            fmt.println(linux.execve(odinbar_path_expanded, nil, posix.environ))
           }
         }
       }
