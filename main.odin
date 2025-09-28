@@ -561,6 +561,8 @@ main :: proc() {
 
         if current_event.type == xlib.EventType.KeyPress {
           if xlib.LookupKeysym(&current_event.xkey, 0) == xlib.KeySym.XK_v {
+            //fmt.println(posix.getenv("HOME"))
+            libc.system("cd ~/.odinbar && echo 'rebuilding' && make")
             fmt.println(linux.execve(odinbar_path_expanded, nil, posix.environ))
           }
         }
