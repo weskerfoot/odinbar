@@ -1,6 +1,9 @@
 package main
+import "base:runtime"
 import "core:c"
 import "core:c/libc"
+import "core:sys/linux"
+import "core:sys/posix"
 import "core:fmt"
 import "core:strings"
 import "core:mem"
@@ -13,7 +16,7 @@ import "vendor:x11/xlib"
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
-preferred_font: cstring = "Hack"
+preferred_font: cstring = "Arial"
 fallback_font: ^ttf.Font
 
 TextCacheItem :: struct {
@@ -375,7 +378,6 @@ get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, ttf_font: ^^ttf.F
 }
 
 main :: proc() {
-
   display := xlib.OpenDisplay(nil)
   displayHeight := xlib.DisplayHeight(display, 0)
   displayWidth := xlib.DisplayWidth(display, 0)
@@ -483,7 +485,16 @@ main :: proc() {
   xlib.SelectInput(display,
                    root,
                    {xlib.EventMaskBits.PropertyChange,
-                    xlib.EventMaskBits.SubstructureNotify})
+                    xlib.EventMaskBits.SubstructureNotify,
+                    xlib.EventMaskBits.KeyPress})
+
+  xlib.GrabKey(display,
+               cast(i32)xlib.KeysymToKeycode(display, xlib.KeySym.XK_V),
+               {xlib.InputMaskBits.Mod1Mask},
+               root,
+               true,
+               xlib.GrabMode.GrabModeAsync,
+               xlib.GrabMode.GrabModeAsync)
 
   // Gets all currently active windows and adds them to the cache
   cache_active_windows(display, fc_config, root, renderer)
@@ -533,6 +544,14 @@ main :: proc() {
             if window_id != 0 {
               text_set_cached(display, fc_config, renderer, window_id)
             }
+          }
+        }
+
+        if current_event.type == xlib.EventType.KeyPress {
+          if xlib.LookupKeysym(&current_event.xkey, 0) == xlib.KeySym.XK_v {
+            fmt.println(posix.environ)
+            libc.system("cd /home/wes/odinbar && make")
+            linux.execve("/home/wes/odinbar/odinbar", nil, posix.environ)
           }
         }
       }
