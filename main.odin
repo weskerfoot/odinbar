@@ -19,7 +19,7 @@ import "vendor:x11/xlib"
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
-preferred_font: cstring = "Times New Roman"
+preferred_font: cstring = "Comic Sans"
 
 TextCacheItem :: struct {
   surface: ^sdl2.Surface,
@@ -618,31 +618,31 @@ main :: proc() {
         cached_texture, ok_text := text_get_cached(display, fc_config, renderer, active_window).?
         if ok_text {
           rect : sdl2.Rect = {100, 0, cached_texture.text_width, cached_texture.text_height}
-
-          t, ok_dt:= time.time_to_datetime(time.now())
-          tz, ok_tz := timezone.region_load("America/Toronto")
-          hour := timezone.datetime_to_tz(t, tz).hour
-          minute := timezone.datetime_to_tz(t, tz).minute
-          second := timezone.datetime_to_tz(t, tz).second
-
-          sep_width := digit_cache.widths[100]
-
-          num_rect_hour : sdl2.Rect = {0, 0, digit_cache.widths[hour], digit_cache.heights[hour]}
-          num_rect_hour_sep : sdl2.Rect = {digit_cache.widths[hour], 0, digit_cache.widths[100], digit_cache.heights[100]}
-          num_rect_minute : sdl2.Rect = {digit_cache.widths[hour] + sep_width, 0, digit_cache.widths[minute], digit_cache.heights[minute]}
-          num_rect_minute_sep : sdl2.Rect = {digit_cache.widths[hour] + digit_cache.widths[minute] + sep_width, 0, digit_cache.widths[100], digit_cache.heights[100]}
-          num_rect_second : sdl2.Rect = {digit_cache.widths[minute] + digit_cache.widths[hour] + sep_width*2, 0, digit_cache.widths[second], digit_cache.heights[second]}
-
           sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
-          sdl2.RenderCopy(renderer, digit_cache.textures[hour], nil, &num_rect_hour)
-          sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_hour_sep)
-          sdl2.RenderCopy(renderer, digit_cache.textures[minute], nil, &num_rect_minute)
-          sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_minute_sep)
-          sdl2.RenderCopy(renderer, digit_cache.textures[second], nil, &num_rect_second)
+
         }
         if !ok_text {
           fmt.println("Failed to get any text to render!")
         }
+        t, ok_dt:= time.time_to_datetime(time.now())
+        tz, ok_tz := timezone.region_load("America/Toronto")
+        hour := timezone.datetime_to_tz(t, tz).hour
+        minute := timezone.datetime_to_tz(t, tz).minute
+        second := timezone.datetime_to_tz(t, tz).second
+
+        sep_width := digit_cache.widths[100]
+
+        num_rect_hour : sdl2.Rect = {0, 0, digit_cache.widths[hour], digit_cache.heights[hour]}
+        num_rect_hour_sep : sdl2.Rect = {digit_cache.widths[hour], 0, digit_cache.widths[100], digit_cache.heights[100]}
+        num_rect_minute : sdl2.Rect = {digit_cache.widths[hour] + sep_width, 0, digit_cache.widths[minute], digit_cache.heights[minute]}
+        num_rect_minute_sep : sdl2.Rect = {digit_cache.widths[hour] + digit_cache.widths[minute] + sep_width, 0, digit_cache.widths[100], digit_cache.heights[100]}
+        num_rect_second : sdl2.Rect = {digit_cache.widths[minute] + digit_cache.widths[hour] + sep_width*2, 0, digit_cache.widths[second], digit_cache.heights[second]}
+
+        sdl2.RenderCopy(renderer, digit_cache.textures[hour], nil, &num_rect_hour)
+        sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_hour_sep)
+        sdl2.RenderCopy(renderer, digit_cache.textures[minute], nil, &num_rect_minute)
+        sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_minute_sep)
+        sdl2.RenderCopy(renderer, digit_cache.textures[second], nil, &num_rect_second)
         sdl2.RenderPresent(renderer)
       }
       sdl2.Delay(8)
