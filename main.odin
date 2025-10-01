@@ -553,6 +553,7 @@ main :: proc() {
   cache_active_windows(display, fc_config, root, renderer)
 
   init_digits(renderer, fc_config)
+  sep_width := digit_cache.widths[100]
 
   for running {
       for sdl2.PollEvent(&event) != false {
@@ -626,23 +627,24 @@ main :: proc() {
         }
         t, ok_dt:= time.time_to_datetime(time.now())
         tz, ok_tz := timezone.region_load("America/Toronto")
-        hour := timezone.datetime_to_tz(t, tz).hour
-        minute := timezone.datetime_to_tz(t, tz).minute
-        second := timezone.datetime_to_tz(t, tz).second
+        dt_with_tz := timezone.datetime_to_tz(t, tz)
+        hour := dt_with_tz.hour
+        minute := dt_with_tz.minute
+        second := dt_with_tz.second
 
-        sep_width := digit_cache.widths[100]
+        if hour >= 0 && hour <= 60 && minute >= 0 && minute <= 60 && second >= 0 && second <= 60 {
+          num_rect_hour : sdl2.Rect = {0, 0, digit_cache.widths[hour], digit_cache.heights[hour]}
+          num_rect_hour_sep : sdl2.Rect = {digit_cache.widths[hour], 0, digit_cache.widths[100], digit_cache.heights[100]}
+          num_rect_minute : sdl2.Rect = {digit_cache.widths[hour] + sep_width, 0, digit_cache.widths[minute], digit_cache.heights[minute]}
+          num_rect_minute_sep : sdl2.Rect = {digit_cache.widths[hour] + digit_cache.widths[minute] + sep_width, 0, digit_cache.widths[100], digit_cache.heights[100]}
+          num_rect_second : sdl2.Rect = {digit_cache.widths[minute] + digit_cache.widths[hour] + sep_width*2, 0, digit_cache.widths[second], digit_cache.heights[second]}
 
-        num_rect_hour : sdl2.Rect = {0, 0, digit_cache.widths[hour], digit_cache.heights[hour]}
-        num_rect_hour_sep : sdl2.Rect = {digit_cache.widths[hour], 0, digit_cache.widths[100], digit_cache.heights[100]}
-        num_rect_minute : sdl2.Rect = {digit_cache.widths[hour] + sep_width, 0, digit_cache.widths[minute], digit_cache.heights[minute]}
-        num_rect_minute_sep : sdl2.Rect = {digit_cache.widths[hour] + digit_cache.widths[minute] + sep_width, 0, digit_cache.widths[100], digit_cache.heights[100]}
-        num_rect_second : sdl2.Rect = {digit_cache.widths[minute] + digit_cache.widths[hour] + sep_width*2, 0, digit_cache.widths[second], digit_cache.heights[second]}
-
-        sdl2.RenderCopy(renderer, digit_cache.textures[hour], nil, &num_rect_hour)
-        sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_hour_sep)
-        sdl2.RenderCopy(renderer, digit_cache.textures[minute], nil, &num_rect_minute)
-        sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_minute_sep)
-        sdl2.RenderCopy(renderer, digit_cache.textures[second], nil, &num_rect_second)
+          sdl2.RenderCopy(renderer, digit_cache.textures[hour], nil, &num_rect_hour)
+          sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_hour_sep)
+          sdl2.RenderCopy(renderer, digit_cache.textures[minute], nil, &num_rect_minute)
+          sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_minute_sep)
+          sdl2.RenderCopy(renderer, digit_cache.textures[second], nil, &num_rect_second)
+        }
         sdl2.RenderPresent(renderer)
       }
       sdl2.Delay(8)
