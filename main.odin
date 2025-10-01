@@ -9,6 +9,9 @@ import "core:strings"
 import "core:mem"
 import "core:os"
 import "core:time"
+import "core:time/timezone"
+import "core:time/datetime"
+import "core:strconv"
 import "vendor:sdl2"
 import "vendor:sdl2/ttf"
 import "vendor:x11/xlib"
@@ -16,8 +19,7 @@ import "vendor:x11/xlib"
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
-preferred_font: cstring = "Arial"
-fallback_font: ^ttf.Font
+preferred_font: cstring = "Times New Roman"
 
 TextCacheItem :: struct {
   surface: ^sdl2.Surface,
@@ -27,6 +29,40 @@ TextCacheItem :: struct {
   text_height: i32,
   is_active: bool,
   font: ^ttf.Font
+}
+
+DigitTextCache :: struct {
+  textures: [101]^sdl2.Texture,
+  surfaces: [101]^sdl2.Surface,
+  widths: [101]i32,
+  heights: [101]i32
+}
+
+digit_cache : DigitTextCache
+
+init_digits :: proc(renderer: ^sdl2.Renderer, fc_config: ^FcConfig) {
+  white : sdl2.Color = {100, 200, 100, 255}
+
+  font: ^ttf.Font
+  get_matching_font(fc_config, "abc123", &font)
+
+  text_width, text_height : i32
+  c : []u8 = {0, 0}
+  num_st : cstring
+  for i in 0..<100 {
+    num_st = strings.clone_to_cstring(strconv.itoa(c, i))
+    ttf.SizeUTF8(font, num_st, &text_width, &text_height)
+    digit_cache.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
+    digit_cache.textures[i] = sdl2.CreateTextureFromSurface(renderer, digit_cache.surfaces[i])
+    digit_cache.widths[i] = text_width
+    digit_cache.heights[i] = text_height
+  }
+
+  ttf.SizeUTF8(font, ":", &text_width, &text_height)
+  digit_cache.surfaces[100] = ttf.RenderUTF8_Solid(font, ":", white)
+  digit_cache.textures[100] = sdl2.CreateTextureFromSurface(renderer, digit_cache.surfaces[100])
+  digit_cache.widths[100] = text_width
+  digit_cache.heights[100] = text_height
 }
 
 foreign import fontconfig "system:fontconfig"
@@ -215,7 +251,7 @@ text_set_cached :: proc(display: ^xlib.Display,
     i += 1
   }
 
-  white : sdl2.Color = {255, 255, 255, 255}
+  white : sdl2.Color = {100, 200, 100, 255}
   active_window, ok_window_name := get_window_name(display, window_id).?
 
   if !ok_window_name {
@@ -336,9 +372,7 @@ get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, ttf_font: ^^ttf.F
   font_patterns: ^FcFontSet = FcFontSort(fc_config, pat, 1, nil, &result)
 
   if font_patterns == nil || font_patterns.nfont == 0 {
-    fmt.println("No fonts configured on your system\n")
-    ttf_font^ = fallback_font
-    return
+    fmt.panicf("No fonts configured on your system\n")
   }
 
   font_pattern: ^FcPattern = FcFontRenderPrepare(fc_config, pat, font_patterns.fonts^)
@@ -347,9 +381,7 @@ get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, ttf_font: ^^ttf.F
     FcFontSetAdd(fs, font_pattern)
   }
   else {
-    fmt.println("Could not prepare matched font for loading\n")
-    ttf_font^ = fallback_font
-    return
+    fmt.panicf("Could not prepare matched font for loading\n")
   }
 
   FcFontSetSortDestroy(font_patterns)
@@ -403,8 +435,6 @@ main :: proc() {
   else {
     odinbar_path_expanded = odinbar_path
   }
-
-  get_matching_font(fc_config, "abcdefg", &fallback_font)
 
   root := xlib.RootWindow(display, screen)
 
@@ -487,7 +517,7 @@ main :: proc() {
 
   ttf.Init()
 
-  white : sdl2.Color = {255, 255, 255, 255}
+  white : sdl2.Color = {255, 0, 0, 255}
 
   defer ttf.Quit()
   defer free_cache()
@@ -510,6 +540,8 @@ main :: proc() {
 
   // Gets all currently active windows and adds them to the cache
   cache_active_windows(display, fc_config, root, renderer)
+
+  init_digits(renderer, fc_config)
 
   for running {
       for sdl2.PollEvent(&event) != false {
@@ -561,7 +593,6 @@ main :: proc() {
 
         if current_event.type == xlib.EventType.KeyPress {
           if xlib.LookupKeysym(&current_event.xkey, 0) == xlib.KeySym.XK_v {
-            //fmt.println(posix.getenv("HOME"))
             libc.system("cd ~/.odinbar && echo 'rebuilding' && make")
             fmt.println(linux.execve(odinbar_path_expanded, nil, posix.environ))
           }
@@ -575,13 +606,32 @@ main :: proc() {
       if ok_window {
         cached_texture, ok_text := text_get_cached(display, fc_config, renderer, active_window).?
         if ok_text {
-          rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
+          rect : sdl2.Rect = {100, 0, cached_texture.text_width, cached_texture.text_height}
+
+          t, ok_dt:= time.time_to_datetime(time.now())
+          tz, ok_tz := timezone.region_load("America/Toronto")
+          hour := timezone.datetime_to_tz(t, tz).hour
+          minute := timezone.datetime_to_tz(t, tz).minute
+          second := timezone.datetime_to_tz(t, tz).second
+
+          sep_width := digit_cache.widths[100]
+
+          num_rect_hour : sdl2.Rect = {0, 0, digit_cache.widths[hour], digit_cache.heights[hour]}
+          num_rect_hour_sep : sdl2.Rect = {digit_cache.widths[hour], 0, digit_cache.widths[100], digit_cache.heights[100]}
+          num_rect_minute : sdl2.Rect = {digit_cache.widths[hour] + sep_width, 0, digit_cache.widths[minute], digit_cache.heights[minute]}
+          num_rect_minute_sep : sdl2.Rect = {digit_cache.widths[hour] + digit_cache.widths[minute] + sep_width, 0, digit_cache.widths[100], digit_cache.heights[100]}
+          num_rect_second : sdl2.Rect = {digit_cache.widths[minute] + digit_cache.widths[hour] + sep_width*2, 0, digit_cache.widths[second], digit_cache.heights[second]}
+
           sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
+          sdl2.RenderCopy(renderer, digit_cache.textures[hour], nil, &num_rect_hour)
+          sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_hour_sep)
+          sdl2.RenderCopy(renderer, digit_cache.textures[minute], nil, &num_rect_minute)
+          sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_minute_sep)
+          sdl2.RenderCopy(renderer, digit_cache.textures[second], nil, &num_rect_second)
         }
         if !ok_text {
           fmt.println("Failed to get any text to render!")
         }
-
         sdl2.RenderPresent(renderer)
       }
       sdl2.Delay(8)
