@@ -47,9 +47,19 @@ init_digits :: proc(renderer: ^sdl2.Renderer, fc_config: ^FcConfig) {
   get_matching_font(fc_config, "abc123", &font)
 
   text_width, text_height : i32
-  c : []u8 = {0, 0}
+  c :[]u8 = {0, 0}
   num_st : cstring
-  for i in 0..<100 {
+  padded := [2]string {"0", "0"}
+  for i in 0..<10 {
+    padded[1] = strconv.itoa(c, i)
+    num_st = strings.clone_to_cstring(strings.concatenate(padded[:]))
+    ttf.SizeUTF8(font, num_st, &text_width, &text_height)
+    digit_cache.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
+    digit_cache.textures[i] = sdl2.CreateTextureFromSurface(renderer, digit_cache.surfaces[i])
+    digit_cache.widths[i] = text_width
+    digit_cache.heights[i] = text_height
+  }
+  for i in 10..<100 {
     num_st = strings.clone_to_cstring(strconv.itoa(c, i))
     ttf.SizeUTF8(font, num_st, &text_width, &text_height)
     digit_cache.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
