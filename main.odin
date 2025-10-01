@@ -49,7 +49,8 @@ init_digits :: proc(renderer: ^sdl2.Renderer, fc_config: ^FcConfig) {
   text_width, text_height : i32
   c :[]u8 = {0, 0}
   num_st : cstring
-  padded := [2]string {"0", "0"}
+  padded :[2]string
+  padded[0] = "0"
   for i in 0..<10 {
     padded[1] = strconv.itoa(c, i)
     num_st = strings.clone_to_cstring(strings.concatenate(padded[:]))
