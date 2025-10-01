@@ -269,7 +269,7 @@ text_set_cached :: proc(display: ^xlib.Display,
     return nil
   }
 
-  if active_window == "" {
+  if active_window == "" || active_window == nil {
     return nil
   }
 
@@ -357,9 +357,8 @@ get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, ttf_font: ^^ttf.F
   charset := FcCharSetCreate()
   result : FcResult
 
-  test_text := cast(^u8)text
   ucs4: c.uint
-  p: ^c.uchar = cast(^c.uchar)test_text
+  p: ^c.uchar = cast(^c.uchar)text
 
   for p^ != 0 {
     len : c.int = FcUtf8ToUcs4(p, &ucs4, cast(i32)libc.strlen(cast(cstring)p))
@@ -367,7 +366,7 @@ get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, ttf_font: ^^ttf.F
       break
     }
     FcCharSetAddChar(charset, ucs4)
-    p = cast(^c.uchar)(cast(uintptr)(cast(i32)cast(uintptr)p + len))
+    p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + cast(i64)len))
   }
 
   FcPatternAddCharSet(pat, cast(^u8)strings.clone_to_cstring("charset"), charset)
