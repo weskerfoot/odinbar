@@ -40,11 +40,11 @@ DigitTextCache :: struct {
 
 digit_cache : DigitTextCache
 
-init_digits :: proc(renderer: ^sdl2.Renderer, fc_config: ^FcConfig) {
+init_digits :: proc(renderer: ^sdl2.Renderer) {
   white : sdl2.Color = {100, 200, 100, 255}
 
   font: ^ttf.Font
-  get_matching_font(fc_config, "abc123", &font)
+  get_matching_font("abc123", &font)
 
   text_width, text_height : i32
   c :[]u8 = {0, 0}
@@ -192,7 +192,6 @@ get_attributes :: proc(display: ^xlib.Display,
 }
 
 cache_active_windows :: proc(display: ^xlib.Display,
-                             fc_config: ^FcConfig,
                              root_window: xlib.XID,
                              renderer: ^sdl2.Renderer) {
   root_ret : xlib.XID
@@ -218,7 +217,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
       if attrs.map_state == unviewable || attrs.map_state == unmapped {
         continue
       }
-      text_set_cached(display, fc_config, renderer, current_window)
+      text_set_cached(display, renderer, current_window)
     }
   }
 }
@@ -226,7 +225,6 @@ cache_active_windows :: proc(display: ^xlib.Display,
 cache: #soa[dynamic]TextCacheItem
 
 text_get_cached :: proc(display: ^xlib.Display,
-                        fc_config: ^FcConfig,
                         renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
   if window_id == 0 {
@@ -238,11 +236,10 @@ text_get_cached :: proc(display: ^xlib.Display,
       return v
     }
   }
-  return text_set_cached(display, fc_config, renderer, window_id)
+  return text_set_cached(display, renderer, window_id)
 }
 
 text_set_cached :: proc(display: ^xlib.Display,
-                        fc_config: ^FcConfig,
                         renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCacheItem) {
 
@@ -274,7 +271,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   }
 
   font: ^ttf.Font
-  get_matching_font(fc_config, active_window, &font)
+  get_matching_font(active_window, &font)
 
   win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
@@ -349,10 +346,14 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
     return nil
   }
 
-  return (cast(^xlib.XID)data)^
+  window_id := (cast(^xlib.XID)data)^
+  if window_id == 0 {
+    return nil
+  }
+  return window_id
 }
 
-get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, ttf_font: ^^ttf.Font) {
+get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   pat := FcNameParse(cast(^c.char)preferred_font)
   charset := FcCharSetCreate()
   result : FcResult
@@ -371,7 +372,7 @@ get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, ttf_font: ^^ttf.F
 
   FcPatternAddCharSet(pat, cast(^u8)strings.clone_to_cstring("charset"), charset)
 
-  FcConfigSubstitute(fc_config, pat, FcMatchKind.FcMatchPattern)
+  FcConfigSubstitute(nil, pat, FcMatchKind.FcMatchPattern)
   FcDefaultSubstitute(pat)
   fs := FcFontSetCreate()
   os := FcObjectSetBuild(cast(^u8)strings.clone_to_cstring("family"),
@@ -379,13 +380,13 @@ get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, ttf_font: ^^ttf.F
                          strings.clone_to_cstring("file"),
                          nil)
 
-  font_patterns: ^FcFontSet = FcFontSort(fc_config, pat, 1, nil, &result)
+  font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &result)
 
   if font_patterns == nil || font_patterns.nfont == 0 {
     fmt.panicf("No fonts configured on your system\n")
   }
 
-  font_pattern: ^FcPattern = FcFontRenderPrepare(fc_config, pat, font_patterns.fonts^)
+  font_pattern: ^FcPattern = FcFontRenderPrepare(nil, pat, font_patterns.fonts^)
 
   if font_pattern != nil {
     FcFontSetAdd(fs, font_pattern)
@@ -431,8 +432,6 @@ main :: proc() {
   screen := xlib.DefaultScreen(display)
   screen_width := xlib.DisplayWidth(display, screen)
   bar_height :u32 = 40
-
-  fc_config := FcInitLoadConfigAndFonts()
 
   // For expanding path to odinbar
   odinbar_wordexp :posix.wordexp_t
@@ -549,10 +548,16 @@ main :: proc() {
                xlib.GrabMode.GrabModeAsync)
 
   // Gets all currently active windows and adds them to the cache
-  cache_active_windows(display, fc_config, root, renderer)
+  cache_active_windows(display, root, renderer)
 
-  init_digits(renderer, fc_config)
+  init_digits(renderer)
   sep_width := digit_cache.widths[100]
+
+  tz, ok_tz := timezone.region_load("America/Toronto")
+
+  if !ok_tz {
+    fmt.panicf("Invalid timezone")
+  }
 
   for running {
       for sdl2.PollEvent(&event) != false {
@@ -576,7 +581,7 @@ main :: proc() {
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
           if window_id != 0 {
-            text_set_cached(display, fc_config, renderer, window_id)
+            text_set_cached(display, renderer, window_id)
 
             fmt.println("======")
             for v in cache {
@@ -597,14 +602,14 @@ main :: proc() {
               current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
             window_id := current_event.xproperty.window
             if window_id != 0 {
-              text_set_cached(display, fc_config, renderer, window_id)
+              text_set_cached(display, renderer, window_id)
             }
           }
         }
 
         if current_event.type == xlib.EventType.KeyPress {
           if xlib.LookupKeysym(&current_event.xkey, 0) == xlib.KeySym.XK_v {
-            libc.system("cd ~/.odinbar && echo 'rebuilding' && make")
+            libc.system("cd ~/.odinbar && echo 'rebuilding' && make debug")
             fmt.println(linux.execve(odinbar_path_expanded, nil, posix.environ))
           }
         }
@@ -615,39 +620,42 @@ main :: proc() {
       active_window, ok_window := get_active_window(display).?
 
       if ok_window {
-        cached_texture, ok_text := text_get_cached(display, fc_config, renderer, active_window).?
+        cached_texture, ok_text := text_get_cached(display, renderer, active_window).?
+
         if ok_text {
           rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
           sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
-
         }
-        if !ok_text {
+        else {
           fmt.println("Failed to get any text to render!")
         }
-        t, ok_dt:= time.time_to_datetime(time.now())
-        tz, ok_tz := timezone.region_load("America/Toronto")
-        dt_with_tz := timezone.datetime_to_tz(t, tz)
-        hour := dt_with_tz.hour
-        minute := dt_with_tz.minute
-        second := dt_with_tz.second
-
-        clock_offset := screen_width - (digit_cache.widths[hour] + digit_cache.widths[minute] + digit_cache.widths[second] + sep_width*2)
-
-        if hour >= 0 && hour <= 60 && minute >= 0 && minute <= 60 && second >= 0 && second <= 60 {
-          num_rect_hour : sdl2.Rect = {clock_offset, 0, digit_cache.widths[hour], digit_cache.heights[hour]}
-          num_rect_hour_sep : sdl2.Rect = {clock_offset + digit_cache.widths[hour], 0, digit_cache.widths[100], digit_cache.heights[100]}
-          num_rect_minute : sdl2.Rect = {clock_offset + digit_cache.widths[hour] + sep_width, 0, digit_cache.widths[minute], digit_cache.heights[minute]}
-          num_rect_minute_sep : sdl2.Rect = {clock_offset + digit_cache.widths[hour] + digit_cache.widths[minute] + sep_width, 0, digit_cache.widths[100], digit_cache.heights[100]}
-          num_rect_second : sdl2.Rect = {clock_offset + digit_cache.widths[minute] + digit_cache.widths[hour] + sep_width*2, 0, digit_cache.widths[second], digit_cache.heights[second]}
-
-          sdl2.RenderCopy(renderer, digit_cache.textures[hour], nil, &num_rect_hour)
-          sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_hour_sep)
-          sdl2.RenderCopy(renderer, digit_cache.textures[minute], nil, &num_rect_minute)
-          sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_minute_sep)
-          sdl2.RenderCopy(renderer, digit_cache.textures[second], nil, &num_rect_second)
-        }
-        sdl2.RenderPresent(renderer)
       }
+      else {
+        fmt.println("bad window")
+      }
+
+      t, ok_dt:= time.time_to_datetime(time.now())
+      dt_with_tz := timezone.datetime_to_tz(t, tz)
+      hour := dt_with_tz.hour
+      minute := dt_with_tz.minute
+      second := dt_with_tz.second
+
+      clock_offset := screen_width - (digit_cache.widths[hour] + digit_cache.widths[minute] + digit_cache.widths[second] + sep_width*2)
+
+      if hour >= 0 && hour <= 60 && minute >= 0 && minute <= 60 && second >= 0 && second <= 60 {
+        num_rect_hour : sdl2.Rect = {clock_offset, 0, digit_cache.widths[hour], digit_cache.heights[hour]}
+        num_rect_hour_sep : sdl2.Rect = {clock_offset + digit_cache.widths[hour], 0, digit_cache.widths[100], digit_cache.heights[100]}
+        num_rect_minute : sdl2.Rect = {clock_offset + digit_cache.widths[hour] + sep_width, 0, digit_cache.widths[minute], digit_cache.heights[minute]}
+        num_rect_minute_sep : sdl2.Rect = {clock_offset + digit_cache.widths[hour] + digit_cache.widths[minute] + sep_width, 0, digit_cache.widths[100], digit_cache.heights[100]}
+        num_rect_second : sdl2.Rect = {clock_offset + digit_cache.widths[minute] + digit_cache.widths[hour] + sep_width*2, 0, digit_cache.widths[second], digit_cache.heights[second]}
+
+        sdl2.RenderCopy(renderer, digit_cache.textures[hour], nil, &num_rect_hour)
+        sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_hour_sep)
+        sdl2.RenderCopy(renderer, digit_cache.textures[minute], nil, &num_rect_minute)
+        sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_minute_sep)
+        sdl2.RenderCopy(renderer, digit_cache.textures[second], nil, &num_rect_second)
+      }
+      sdl2.RenderPresent(renderer)
       sdl2.Delay(8)
   }
 }
