@@ -22,7 +22,7 @@ XA_WINDOW : xlib.Atom = 33
 
 preferred_font: cstring = "Arial"
 
-TextCacheItem :: struct {
+TextCache :: struct {
   surface: ^sdl2.Surface,
   icon_surface: ^sdl2.Surface,
   texture: ^sdl2.Texture,
@@ -33,6 +33,18 @@ TextCacheItem :: struct {
   is_active: bool,
   font: ^ttf.Font
 }
+
+cache: #soa[dynamic]TextCache
+
+// For caching icon files read from disk
+// This is different from the ones in _NET_WM_ICON
+IconImageCache :: struct {
+  class_name: cstring,
+  surface: ^sdl2.Surface,
+  is_active: bool
+}
+
+icon_image_cache: #soa[dynamic]IconImageCache
 
 DigitTextCache :: struct {
   textures: [101]^sdl2.Texture,
@@ -50,7 +62,7 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
   get_matching_font("abc123", &font)
 
   text_width, text_height : i32
-  c :[]u8 = {0, 0}
+  c :[]u8 = {48, 0}
   num_st : cstring
   padded :[2]string
   padded[0] = "0"
@@ -225,11 +237,9 @@ cache_active_windows :: proc(display: ^xlib.Display,
   }
 }
 
-cache: #soa[dynamic]TextCacheItem
-
 text_get_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
-                        window_id: xlib.XID) -> Maybe(TextCacheItem) {
+                        window_id: xlib.XID) -> Maybe(TextCache) {
   if window_id == 0 {
     fmt.println("got window_id == 0 in text_get_cached")
     return nil
@@ -244,7 +254,7 @@ text_get_cached :: proc(display: ^xlib.Display,
 
 text_set_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
-                        window_id: xlib.XID) -> Maybe(TextCacheItem) {
+                        window_id: xlib.XID) -> Maybe(TextCache) {
 
   if window_id == 0 {
     fmt.println("got window_id == 0 in text_set_cached")
@@ -291,9 +301,9 @@ text_set_cached :: proc(display: ^xlib.Display,
   text_width, text_height : i32
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
-  result := TextCacheItem{win_name_surface, win_icon_surface, win_name_texture, win_icon_texture, window_id, text_width, text_height, true, font}
+  result := TextCache{win_name_surface, win_icon_surface, win_name_texture, win_icon_texture, window_id, text_width, text_height, true, font}
 
-  if len(cache) > 50 {
+  if len(cache) > 100 {
     free_cache()
   }
 
@@ -328,6 +338,26 @@ get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(cstring)
   return cast(cstring)props.value
 }
 
+get_window_class :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(cstring) {
+  hint_return : xlib.XClassHint
+  result := xlib.GetClassHint(display, xid, &hint_return)
+
+  if cast(i32)result == 0 {
+    return nil
+  }
+
+  return hint_return.res_name
+}
+
+get_window_icon_from_file :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(^sdl2.Surface) {
+  class_name, class_name_ok := get_window_class(display, xid).?
+  if !class_name_ok {
+    return nil
+  }
+  fmt.println("class_name = ", class_name)
+  return nil
+}
+
 get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(^sdl2.Surface) {
   window_icon_atom := xlib.InternAtom(display, "_NET_WM_ICON", false)
 
@@ -357,6 +387,10 @@ get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(^sdl2.Su
   if icon_size_nitems_return != 2 {
     if icon_size_data != nil {
       xlib.Free(icon_size_data)
+    }
+    window_icon_surface, window_icon_ok := get_window_icon_from_file(display, xid).?
+    if window_icon_ok {
+      return window_icon_surface
     }
     return nil
   }
@@ -699,6 +733,7 @@ main :: proc() {
             for v in cache {
               if v.is_active {
                 fmt.println(get_window_name(display, v.window_id))
+                fmt.println(get_window_class(display, v.window_id))
               }
             }
 
