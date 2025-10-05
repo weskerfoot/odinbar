@@ -14,16 +14,19 @@ import "core:time/datetime"
 import "core:strconv"
 import "vendor:sdl2"
 import "vendor:sdl2/ttf"
+import "vendor:sdl2/image"
 import "vendor:x11/xlib"
 
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
-preferred_font: cstring = "Comic Sans"
+preferred_font: cstring = "Arial"
 
 TextCacheItem :: struct {
   surface: ^sdl2.Surface,
+  icon_surface: ^sdl2.Surface,
   texture: ^sdl2.Texture,
+  icon_texture: ^sdl2.Texture,
   window_id: xlib.XID,
   text_width: i32,
   text_height: i32,
@@ -261,6 +264,7 @@ text_set_cached :: proc(display: ^xlib.Display,
 
   white : sdl2.Color = {100, 200, 100, 255}
   active_window, ok_window_name := get_window_name(display, window_id).?
+  win_icon_surface, ok_window_icon := get_window_icon(display, window_id).?
 
   if !ok_window_name {
     return nil
@@ -276,10 +280,18 @@ text_set_cached :: proc(display: ^xlib.Display,
   win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
 
+  win_icon_texture : ^sdl2.Texture
+  if ok_window_icon {
+    win_icon_texture = sdl2.CreateTextureFromSurface(renderer, win_icon_surface)
+  }
+  else {
+    win_icon_texture = nil
+  }
+
   text_width, text_height : i32
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
-  result := TextCacheItem{win_name_surface, win_name_texture, window_id, text_width, text_height, true, font}
+  result := TextCacheItem{win_name_surface, win_icon_surface, win_name_texture, win_icon_texture, window_id, text_width, text_height, true, font}
 
   if len(cache) > 50 {
     free_cache()
@@ -299,6 +311,8 @@ free_cache :: proc() {
   for &v in cache {
     sdl2.FreeSurface(v.surface)
     sdl2.DestroyTexture(v.texture)
+    sdl2.FreeSurface(v.icon_surface)
+    sdl2.DestroyTexture(v.icon_texture)
     v.is_active = false
   }
   clear(&cache)
@@ -314,13 +328,109 @@ get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(cstring)
   return cast(cstring)props.value
 }
 
+get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(^sdl2.Surface) {
+  window_icon_atom := xlib.InternAtom(display, "_NET_WM_ICON", false)
+
+  icon_size_type_return : xlib.Atom
+  icon_size_format_return : i32
+  icon_size_nitems_return, icon_size_bytes_left : uint = 0, 0
+  icon_size_data : rawptr
+
+  icon_data_type_return : xlib.Atom
+  icon_data_format_return : i32
+  icon_data_nitems_return, icon_data_bytes_left : uint = 0, 0
+  icon_data_data : rawptr
+
+  xlib.GetWindowProperty(display,
+                         xid,
+                         window_icon_atom,
+                         0,
+                         2,
+                         false,
+                         cast(xlib.Atom)6,
+                         &icon_size_type_return,
+                         &icon_size_format_return,
+                         &icon_size_nitems_return,
+                         &icon_size_bytes_left,
+                         &icon_size_data)
+
+  if icon_size_nitems_return != 2 {
+    if icon_size_data != nil {
+      xlib.Free(icon_size_data)
+    }
+    return nil
+  }
+
+  width := (cast(^int)icon_size_data)^
+  height := (cast(^int)((cast(uintptr)icon_size_data) + size_of(int)))^
+
+  if icon_size_data != nil {
+    xlib.Free(icon_size_data)
+  }
+
+  pixel_data_size :int = width*height
+
+  xlib.GetWindowProperty(display,
+                         xid,
+                         window_icon_atom,
+                         2,
+                         pixel_data_size,
+                         false,
+                         cast(xlib.Atom)6,
+                         &icon_data_type_return,
+                         &icon_data_format_return,
+                         &icon_data_nitems_return,
+                         &icon_data_bytes_left,
+                         &icon_data_data)
+
+  if icon_data_data == nil {
+    return nil
+  }
+
+  if cast(i64)icon_data_bytes_left > 0 {
+    return nil
+  }
+
+  iter_data := cast([^]u64)icon_data_data
+  mask : u64 = 0x00000000000000FF
+  image_buf : [dynamic]u8
+
+  for i in 0..<icon_data_nitems_return { // lol it's not 32 even though xlib says it is
+    r : u8 = cast(u8)(iter_data[i] & mask)
+    g : u8 = cast(u8)((iter_data[i] >> 8) & mask)
+    b : u8 = cast(u8)((iter_data[i] >> 16) & mask)
+    a : u8 = cast(u8)((iter_data[i] >> 24) & mask)
+    append(&image_buf, a)
+    append(&image_buf, r)
+    append(&image_buf, g)
+    append(&image_buf, b)
+  }
+
+  if icon_data_data != nil {
+    xlib.Free(icon_data_data)
+  }
+
+  surface := sdl2.CreateRGBSurfaceFrom(
+    cast(rawptr)&image_buf[0],
+    cast(i32)width,
+    cast(i32)height,
+    32,
+    cast(i32)width * 4,
+    0xFF000000,
+    0x00FF0000,
+    0x0000FF00,
+    0x000000FF
+  )
+
+  return surface
+}
+
 get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
   property := xlib.InternAtom(display, "_NET_ACTIVE_WINDOW", false)
 
   type_return :xlib.Atom
   format_return :i32
-  nitems_return :uint
-  bytes_left :uint
+  nitems_return, bytes_left :uint
   data :rawptr
 
   defer xlib.Free(data)
@@ -573,7 +683,9 @@ main :: proc() {
             if v.is_active && v.window_id == current_event.xdestroywindow.window {
               fmt.println("Freeing window from cache")
               sdl2.FreeSurface(v.surface)
+              sdl2.FreeSurface(v.icon_surface)
               sdl2.DestroyTexture(v.texture)
+              sdl2.DestroyTexture(v.icon_texture)
               v.is_active = false
             }
           }
@@ -624,14 +736,15 @@ main :: proc() {
 
         if ok_text {
           rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
+          icon_rect : sdl2.Rect = {cached_texture.text_width+10, 0, 32, 32}
           sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
+          if cached_texture.icon_texture != nil {
+            sdl2.RenderCopy(renderer, cached_texture.icon_texture, nil, &icon_rect)
+          }
         }
         else {
           fmt.println("Failed to get any text to render!")
         }
-      }
-      else {
-        fmt.println("bad window")
       }
 
       t, ok_dt:= time.time_to_datetime(time.now())
