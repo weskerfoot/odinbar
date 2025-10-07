@@ -267,6 +267,11 @@ text_set_cached :: proc(display: ^xlib.Display,
   for &v in cache {
     if v.window_id == window_id && v.is_active {
       found_existing_window = i
+      sdl2.FreeSurface(v.surface)
+      sdl2.DestroyTexture(v.texture)
+      sdl2.FreeSurface(v.icon_surface)
+      sdl2.DestroyTexture(v.icon_texture)
+      v.is_active = false
       break
     }
     i += 1
@@ -308,7 +313,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   }
 
   if found_existing_window >= 0 {
-    cache[i] = result
+    cache[found_existing_window] = result
   }
   else {
     append(&cache, result)
