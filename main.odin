@@ -62,7 +62,7 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
   get_matching_font("abc123", &font)
 
   text_width, text_height : i32
-  c :[]u8 = {48, 0}
+  c :[]u8 = {0, 0}
   num_st : cstring
   padded :[2]string
   padded[0] = "0"
@@ -354,11 +354,52 @@ get_window_icon_from_file :: proc(display: ^xlib.Display, xid: xlib.XID) -> Mayb
   if !class_name_ok {
     return nil
   }
-  fmt.println("class_name = ", class_name)
-  return nil
+  icon_surface, icon_ok := get_icon_from_class_name(class_name).?
+  if !icon_ok {
+    return nil
+  }
+  return icon_surface
+}
+
+get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(^sdl2.Surface) {
+  if class_name == "" {
+    return nil
+  }
+  desktop_filepath := strings.concatenate({"/usr/share/applications/", strings.clone_from_cstring(class_name), ".desktop"})
+	data, ok_desktop := os.read_entire_file(desktop_filepath, context.allocator)
+	if !ok_desktop {
+		return nil
+	}
+	defer delete(data, context.allocator)
+
+	it := string(data)
+  icon_name: string = ""
+	for line in strings.split_lines_iterator(&it) {
+    if strings.contains(line, "Icon") {
+      head, match, tail := strings.partition(line, "=")
+      icon_name = tail
+    }
+	}
+  if icon_name == "" {
+    return nil
+  }
+
+  icon_path := strings.concatenate({"/usr/share/icons/hicolor/128x128/apps/", strings.clone_from_cstring(class_name), ".png"})
+  icon_rwops := sdl2.RWFromFile(strings.clone_to_cstring(icon_path), "rb")
+  result := image.LoadPNG_RW(icon_rwops)
+  return result
 }
 
 get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(^sdl2.Surface) {
+  window_icon_surface, window_icon_ok := get_window_icon_from_file(display, xid).?
+  if window_icon_ok {
+    fmt.println("found png icon for ", get_window_class(display, xid), window_icon_surface)
+    return window_icon_surface
+  }
+  else {
+    fmt.println("couldn't find icon in png file", get_window_class(display, xid))
+  }
+
   window_icon_atom := xlib.InternAtom(display, "_NET_WM_ICON", false)
 
   icon_size_type_return : xlib.Atom
@@ -387,10 +428,6 @@ get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(^sdl2.Su
   if icon_size_nitems_return != 2 {
     if icon_size_data != nil {
       xlib.Free(icon_size_data)
-    }
-    window_icon_surface, window_icon_ok := get_window_icon_from_file(display, xid).?
-    if window_icon_ok {
-      return window_icon_surface
     }
     return nil
   }
@@ -733,7 +770,6 @@ main :: proc() {
             for v in cache {
               if v.is_active {
                 fmt.println(get_window_name(display, v.window_id))
-                fmt.println(get_window_class(display, v.window_id))
               }
             }
 
