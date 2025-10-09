@@ -543,8 +543,10 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
 get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   pat := FcNameParse(cast(^c.char)preferred_font)
   charset := FcCharSetCreate()
-  defer FcCharSetDestroy(charset)
-  result : FcResult
+  if charset != nil {
+    defer FcCharSetDestroy(charset)
+  }
+  fc_result : FcResult
 
   ucs4: c.uint
   p: ^c.uchar = cast(^c.uchar)text
@@ -568,7 +570,7 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
                          strings.clone_to_cstring("file"),
                          nil)
 
-  font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &result)
+  font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &fc_result)
 
   if font_patterns == nil || font_patterns.nfont == 0 {
     fmt.panicf("No fonts configured on your system\n")
@@ -583,8 +585,12 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
     fmt.panicf("Could not prepare matched font for loading\n")
   }
 
-  defer FcFontSetSortDestroy(font_patterns)
-  defer FcPatternDestroy(pat)
+  if pat != nil {
+    defer FcPatternDestroy(pat)
+  }
+  if font_patterns != nil {
+    defer FcFontSetDestroy(font_patterns)
+  }
 
   if fs != nil {
     if fs.nfont > 0 {
