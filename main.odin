@@ -183,6 +183,7 @@ foreign fontconfig {
   FcPatternFilter :: proc(p: ^FcPattern, os: ^FcObjectSet) -> ^FcPattern ---
   FcPatternGet :: proc(p: ^FcPattern, object: ^c.char, id: c.int, v: ^FcValue) -> FcResult ---
   FcCharSetCreate :: proc() -> ^FcCharSet ---
+  FcCharSetDestroy :: proc(cs: ^FcCharSet) -> ^FcCharSet ---
   FcUtf8ToUcs4 :: proc(src_orig: ^c.char, dst: ^c.uint, len: c.int) -> c.int ---
   FcCharSetAddChar :: proc(fcs: ^FcCharSet, ucs4: c.uint) -> c.int ---
   FcPatternAddCharSet :: proc(p: ^FcPattern, object: ^c.char, cs: ^FcCharSet) -> c.int ---
@@ -542,6 +543,7 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
 get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   pat := FcNameParse(cast(^c.char)preferred_font)
   charset := FcCharSetCreate()
+  defer FcCharSetDestroy(charset)
   result : FcResult
 
   ucs4: c.uint
@@ -581,8 +583,8 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
     fmt.panicf("Could not prepare matched font for loading\n")
   }
 
-  FcFontSetSortDestroy(font_patterns)
-  FcPatternDestroy(pat)
+  defer FcFontSetSortDestroy(font_patterns)
+  defer FcPatternDestroy(pat)
 
   if fs != nil {
     if fs.nfont > 0 {
