@@ -272,6 +272,7 @@ text_set_cached :: proc(display: ^xlib.Display,
       sdl2.DestroyTexture(v.texture)
       sdl2.FreeSurface(v.icon_surface)
       sdl2.DestroyTexture(v.icon_texture)
+      ttf.CloseFont(v.font)
       v.is_active = false
       break
     }
@@ -292,6 +293,9 @@ text_set_cached :: proc(display: ^xlib.Display,
 
   font: ^ttf.Font
   get_matching_font(active_window, &font)
+  if font == nil {
+    fmt.panicf("Font was nil")
+  }
 
   win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
@@ -329,6 +333,7 @@ free_cache :: proc() {
     sdl2.DestroyTexture(v.texture)
     sdl2.FreeSurface(v.icon_surface)
     sdl2.DestroyTexture(v.icon_texture)
+    ttf.CloseFont(v.font)
     v.is_active = false
   }
   clear(&cache)
@@ -543,9 +548,6 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
 get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   pat := FcNameParse(cast(^c.char)preferred_font)
   charset := FcCharSetCreate()
-  if charset != nil {
-    defer FcCharSetDestroy(charset)
-  }
   fc_result : FcResult
 
   ucs4: c.uint
@@ -585,13 +587,6 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
     fmt.panicf("Could not prepare matched font for loading\n")
   }
 
-  if pat != nil {
-    defer FcPatternDestroy(pat)
-  }
-  if font_patterns != nil {
-    defer FcFontSetDestroy(font_patterns)
-  }
-
   if fs != nil {
     if fs.nfont > 0 {
       v: FcValue
@@ -600,17 +595,26 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
       if v.u.f != nil {
         found_font := cast(cstring)v.u.f
         ttf_font^ = ttf.OpenFont(found_font, 18)
-        FcPatternDestroy(font)
+        defer FcPatternDestroy(font)
       }
-      FcFontSetDestroy(fs)
+      defer FcFontSetDestroy(fs)
     }
   }
   else {
     fmt.panicf("No usable fonts on the system, check the font family")
   }
 
+  if charset != nil {
+    defer FcCharSetDestroy(charset)
+  }
+  if pat != nil {
+    defer FcPatternDestroy(pat)
+  }
+  if font_patterns != nil {
+    defer FcFontSetDestroy(font_patterns)
+  }
   if os != nil {
-    FcObjectSetDestroy(os)
+    defer FcObjectSetDestroy(os)
   }
 }
 
@@ -770,6 +774,7 @@ main :: proc() {
               sdl2.FreeSurface(v.icon_surface)
               sdl2.DestroyTexture(v.texture)
               sdl2.DestroyTexture(v.icon_texture)
+              ttf.CloseFont(v.font)
               v.is_active = false
             }
           }
