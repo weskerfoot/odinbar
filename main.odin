@@ -60,6 +60,7 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
 
   font: ^ttf.Font
   get_matching_font("abc123", &font)
+  defer ttf.CloseFont(font)
 
   text_width, text_height : i32
   c :[]u8 = {0, 0}
