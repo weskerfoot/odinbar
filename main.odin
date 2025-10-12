@@ -36,6 +36,13 @@ TextCache :: struct {
 
 cache: #soa[dynamic]TextCache
 
+FontCache :: struct {
+  font_path: string,
+  font: ^ttf.Font
+}
+
+font_cache: #soa[dynamic]FontCache
+
 // For caching icon files read from disk
 // This is different from the ones in _NET_WM_ICON
 IconImageCache :: struct {
@@ -63,7 +70,6 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
   if font == nil {
     fmt.panicf("Got a nil font in init_digits")
   }
-  defer ttf.CloseFont(font)
 
   text_width, text_height : i32
   c :[]u8 = {0, 0}
@@ -276,9 +282,6 @@ text_set_cached :: proc(display: ^xlib.Display,
       sdl2.DestroyTexture(v.texture)
       sdl2.FreeSurface(v.icon_surface)
       sdl2.DestroyTexture(v.icon_texture)
-      if v.font != nil {
-        ttf.CloseFont(v.font)
-      }
       v.is_active = false
       break
     }
@@ -339,9 +342,6 @@ free_cache :: proc() {
     sdl2.DestroyTexture(v.texture)
     sdl2.FreeSurface(v.icon_surface)
     sdl2.DestroyTexture(v.icon_texture)
-    if v.font != nil {
-      ttf.CloseFont(v.font)
-    }
     v.is_active = false
   }
   clear(&cache)
@@ -386,10 +386,11 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(^sdl2.Surface) {
   }
   desktop_filepath := strings.concatenate({"/usr/share/applications/", strings.clone_from_cstring(class_name), ".desktop"})
 	data, ok_desktop := os.read_entire_file(desktop_filepath, context.allocator)
+	defer delete(data, context.allocator)
+
 	if !ok_desktop {
 		return nil
 	}
-	defer delete(data, context.allocator)
 
 	it := string(data)
   icon_name: string = ""
@@ -602,7 +603,20 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
       FcPatternGet(font, cast(^u8)strings.clone_to_cstring("file"), 0, &v)
       if v.u.f != nil {
         found_font := cast(cstring)v.u.f
-        ttf_font^ = ttf.OpenFont(found_font, 18)
+        found_font_st := strings.clone_from_cstring(found_font)
+        found_font_cached : bool = false
+        for f in font_cache {
+          if f.font_path == found_font_st {
+            ttf_font^ = f.font
+            found_font_cached = true
+            fmt.println("font cache hit")
+          }
+        }
+        if !found_font_cached {
+          fmt.println("font cache miss")
+          ttf_font^ = ttf.OpenFont(found_font, 18)
+          append(&font_cache, FontCache{found_font_st, ttf_font^})
+        }
         defer FcPatternDestroy(font)
       }
       defer FcFontSetDestroy(fs)
@@ -779,9 +793,6 @@ main :: proc() {
               sdl2.FreeSurface(v.icon_surface)
               sdl2.DestroyTexture(v.texture)
               sdl2.DestroyTexture(v.icon_texture)
-              if v.font != nil {
-                ttf.CloseFont(v.font)
-              }
               v.is_active = false
             }
           }
