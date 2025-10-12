@@ -60,6 +60,9 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
 
   font: ^ttf.Font
   get_matching_font("abc123", &font)
+  if font == nil {
+    fmt.panicf("Got a nil font in init_digits")
+  }
   defer ttf.CloseFont(font)
 
   text_width, text_height : i32
@@ -273,7 +276,9 @@ text_set_cached :: proc(display: ^xlib.Display,
       sdl2.DestroyTexture(v.texture)
       sdl2.FreeSurface(v.icon_surface)
       sdl2.DestroyTexture(v.icon_texture)
-      ttf.CloseFont(v.font)
+      if v.font != nil {
+        ttf.CloseFont(v.font)
+      }
       v.is_active = false
       break
     }
@@ -334,7 +339,9 @@ free_cache :: proc() {
     sdl2.DestroyTexture(v.texture)
     sdl2.FreeSurface(v.icon_surface)
     sdl2.DestroyTexture(v.icon_texture)
-    ttf.CloseFont(v.font)
+    if v.font != nil {
+      ttf.CloseFont(v.font)
+    }
     v.is_active = false
   }
   clear(&cache)
@@ -727,9 +734,6 @@ main :: proc() {
 
   white : sdl2.Color = {255, 0, 0, 255}
 
-  defer ttf.Quit()
-  defer free_cache()
-
   current_event : xlib.XEvent
 
   xlib.SelectInput(display,
@@ -775,7 +779,9 @@ main :: proc() {
               sdl2.FreeSurface(v.icon_surface)
               sdl2.DestroyTexture(v.texture)
               sdl2.DestroyTexture(v.icon_texture)
-              ttf.CloseFont(v.font)
+              if v.font != nil {
+                ttf.CloseFont(v.font)
+              }
               v.is_active = false
             }
           }
