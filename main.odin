@@ -271,6 +271,9 @@ text_set_cached :: proc(display: ^xlib.Display,
     fmt.println("got window_id == 0 in text_set_cached")
     return nil
   }
+  if len(cache) > 25 {
+    free_cache()
+  }
 
   // If it's already in there find it and free the existing texture/surface first
   found_existing_window := -1
@@ -322,10 +325,6 @@ text_set_cached :: proc(display: ^xlib.Display,
 
   result := TextCache{win_name_surface, win_icon_surface, win_name_texture, win_icon_texture, window_id, text_width, text_height, true, font}
 
-  if len(cache) > 100 {
-    free_cache()
-  }
-
   if found_existing_window >= 0 {
     cache[found_existing_window] = result
   }
@@ -338,11 +337,13 @@ text_set_cached :: proc(display: ^xlib.Display,
 
 free_cache :: proc() {
   for &v in cache {
-    sdl2.FreeSurface(v.surface)
-    sdl2.DestroyTexture(v.texture)
-    sdl2.FreeSurface(v.icon_surface)
-    sdl2.DestroyTexture(v.icon_texture)
-    v.is_active = false
+    if v.is_active {
+      sdl2.FreeSurface(v.surface)
+      sdl2.DestroyTexture(v.texture)
+      sdl2.FreeSurface(v.icon_surface)
+      sdl2.DestroyTexture(v.icon_texture)
+      v.is_active = false
+    }
   }
   clear(&cache)
 }
