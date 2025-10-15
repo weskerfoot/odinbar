@@ -842,13 +842,15 @@ main :: proc() {
       if ok_window {
         cached_texture, ok_text := text_get_cached(display, renderer, active_window).?
 
-        if ok_text {
-          rect : sdl2.Rect = {0, 0, cached_texture.text_width, cached_texture.text_height}
-          icon_rect : sdl2.Rect = {cached_texture.text_width+10, 0, 32, 32}
+        if ok_text && cached_texture.icon_texture != nil {
+          rect : sdl2.Rect = {32, 5, cached_texture.text_width, cached_texture.text_height}
+          icon_rect : sdl2.Rect = {0, 0, 32, 32}
           sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
-          if cached_texture.icon_texture != nil {
-            sdl2.RenderCopy(renderer, cached_texture.icon_texture, nil, &icon_rect)
-          }
+          sdl2.RenderCopy(renderer, cached_texture.icon_texture, nil, &icon_rect)
+        }
+        else if ok_text {
+          rect : sdl2.Rect = {0, 5, cached_texture.text_width, cached_texture.text_height}
+          sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
         }
         else {
           fmt.println("Failed to get any text to render!")
