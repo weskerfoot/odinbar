@@ -855,10 +855,10 @@ main :: proc() {
   xlib.MapWindow(display, win)
   xlib.Flush(display)
 
-  renderer := sdl2.CreateRenderer(sdl_window, -1, {sdl2.RendererFlags.SOFTWARE})
+  renderer := sdl2.CreateRenderer(sdl_window, -1, {sdl2.RendererFlags.ACCELERATED})
   defer sdl2.DestroyRenderer(renderer)
 
-  selector_renderer := sdl2.CreateRenderer(sdl_selector_win, -1, {sdl2.RendererFlags.SOFTWARE})
+  selector_renderer := sdl2.CreateRenderer(sdl_selector_win, -1, {sdl2.RendererFlags.ACCELERATED})
   defer sdl2.DestroyRenderer(selector_renderer)
 
   running : bool = true
