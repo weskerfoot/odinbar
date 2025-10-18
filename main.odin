@@ -37,7 +37,7 @@ TextCache :: struct {
   window_status_cache: RenderCache,
   icon_status_cache: IconCache,
   window_selector_cache: RenderCache,
-  window_name: cstring,
+  window_name: string,
   window_id: xlib.XID,
   text_width: i32,
   text_height: i32,
@@ -333,7 +333,7 @@ text_set_cached :: proc(display: ^xlib.Display,
       sdl2.DestroyTexture(v.icon_status_cache.texture)
       sdl2.FreeSurface(v.window_selector_cache.surface)
       sdl2.DestroyTexture(v.window_selector_cache.texture)
-      xlib.Free(cast(rawptr)v.window_name)
+      delete(v.window_name)
       if v.icon_status_cache.rwops != nil {
         sdl2.FreeRW(v.icon_status_cache.rwops)
       }
@@ -344,12 +344,16 @@ text_set_cached :: proc(display: ^xlib.Display,
   }
 
   white : sdl2.Color = {100, 200, 100, 255}
-  active_window, ok_window_name := get_window_name(display, window_id).?
+  window_text_props, ok_window_props := get_window_name(display, window_id).?
   win_icon, ok_window_icon := get_window_icon(display, window_id).?
 
-  if !ok_window_name {
+  defer xlib.Free(window_text_props.value)
+
+  if !ok_window_props {
     return nil
   }
+
+  active_window := cast(cstring)window_text_props.value
 
   if active_window == "" || active_window == nil {
     return nil
@@ -381,7 +385,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   result := TextCache{RenderCache{win_name_surface, win_name_texture},
                       IconCache{win_icon.surface, win_icon_texture, win_icon.rwops},
                       RenderCache{win_name_select_surface, win_name_select_texture},
-                      active_window,
+                      strings.clone_from_cstring(active_window),
                       window_id,
                       text_width,
                       text_height,
@@ -408,7 +412,7 @@ free_cache :: proc() {
       sdl2.DestroyTexture(v.icon_status_cache.texture)
       sdl2.FreeSurface(v.window_selector_cache.surface)
       sdl2.DestroyTexture(v.window_selector_cache.texture)
-      xlib.Free(cast(rawptr)v.window_name)
+      delete(v.window_name)
       if v.icon_status_cache.rwops != nil {
         sdl2.FreeRW(v.icon_status_cache.rwops)
       }
@@ -418,14 +422,14 @@ free_cache :: proc() {
   clear(&cache)
 }
 
-get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(cstring) {
+get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(xlib.XTextProperty) {
   props : xlib.XTextProperty
   active_window_atom := xlib.InternAtom(display, "_NET_WM_NAME", false)
   result := xlib.GetTextProperty(display, xid, &props, active_window_atom)
   if cast(i32)result == 0 { // Apparently this doesn't return the same type of Status as other functions?
     return nil
   }
-  return cast(cstring)props.value
+  return props
 }
 
 get_window_class :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(xlib.XClassHint) {
@@ -932,7 +936,7 @@ main :: proc() {
               sdl2.DestroyTexture(v.window_status_cache.texture)
               sdl2.DestroyTexture(v.icon_status_cache.texture)
               sdl2.DestroyTexture(v.window_selector_cache.texture)
-              xlib.Free(cast(rawptr)v.window_name)
+              delete(v.window_name)
               if v.icon_status_cache.rwops != nil {
                 sdl2.FreeRW(v.icon_status_cache.rwops)
               }
