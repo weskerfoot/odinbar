@@ -22,16 +22,48 @@ XA_WINDOW : xlib.Atom = 33
 
 preferred_font: cstring = "Arial"
 
-TextCache :: struct {
+RenderCache :: struct {
   surface: ^sdl2.Surface,
-  icon_surface: ^sdl2.Surface,
+  texture: ^sdl2.Texture
+}
+
+IconCache :: struct {
+  surface: ^sdl2.Surface,
   texture: ^sdl2.Texture,
-  icon_texture: ^sdl2.Texture,
+  rwops: ^sdl2.RWops
+}
+
+TextCache :: struct {
+  window_status_cache: RenderCache,
+  icon_status_cache: IconCache,
+  window_selector_cache: RenderCache,
   window_id: xlib.XID,
   text_width: i32,
   text_height: i32,
   is_active: bool,
   font: ^ttf.Font
+}
+
+get_max_width :: proc() -> i32 {
+  total :i32 = 0
+  for v in &cache {
+    if v.is_active {
+      total = max(total, v.text_width)
+    }
+  }
+  return total + 100
+}
+
+get_max_height :: proc() -> i32 {
+  max_height :i32 = 0
+  count_active :i32 = 0
+  for v in &cache {
+    if v.is_active {
+      max_height = max(max_height, v.text_height)
+      count_active += 1
+    }
+  }
+  return (max_height + 10) * count_active
 }
 
 cache: #soa[dynamic]TextCache
@@ -45,9 +77,14 @@ font_cache: #soa[dynamic]FontCache
 
 // For caching icon files read from disk
 // This is different from the ones in _NET_WM_ICON
+SDLIcon :: struct {
+  surface: ^sdl2.Surface,
+  rwops: ^sdl2.RWops
+}
+
 IconImageCache :: struct {
   class_name: cstring,
-  surface: ^sdl2.Surface,
+  icon: SDLIcon,
   is_active: bool
 }
 
@@ -219,7 +256,8 @@ get_attributes :: proc(display: ^xlib.Display,
 
 cache_active_windows :: proc(display: ^xlib.Display,
                              root_window: xlib.XID,
-                             renderer: ^sdl2.Renderer) {
+                             renderer: ^sdl2.Renderer,
+                             selector_renderer: ^sdl2.Renderer) {
   root_ret : xlib.XID
   parent_ret : xlib.XID
   children_ret : [^]xlib.XID // array of pointers to windows
@@ -243,13 +281,14 @@ cache_active_windows :: proc(display: ^xlib.Display,
       if attrs.map_state == unviewable || attrs.map_state == unmapped {
         continue
       }
-      text_set_cached(display, renderer, current_window)
+      text_set_cached(display, renderer, selector_renderer, current_window)
     }
   }
 }
 
 text_get_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
+                        selector_renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCache) {
   if window_id == 0 {
     fmt.println("got window_id == 0 in text_get_cached")
@@ -260,11 +299,12 @@ text_get_cached :: proc(display: ^xlib.Display,
       return v
     }
   }
-  return text_set_cached(display, renderer, window_id)
+  return text_set_cached(display, renderer, selector_renderer, window_id)
 }
 
 text_set_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
+                        selector_renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCache) {
 
   if window_id == 0 {
@@ -281,10 +321,15 @@ text_set_cached :: proc(display: ^xlib.Display,
   for &v in cache {
     if v.window_id == window_id && v.is_active {
       found_existing_window = i
-      sdl2.FreeSurface(v.surface)
-      sdl2.DestroyTexture(v.texture)
-      sdl2.FreeSurface(v.icon_surface)
-      sdl2.DestroyTexture(v.icon_texture)
+      sdl2.FreeSurface(v.window_status_cache.surface)
+      sdl2.DestroyTexture(v.window_status_cache.texture)
+      sdl2.FreeSurface(v.icon_status_cache.surface)
+      sdl2.DestroyTexture(v.icon_status_cache.texture)
+      sdl2.FreeSurface(v.window_selector_cache.surface)
+      sdl2.DestroyTexture(v.window_selector_cache.texture)
+      if v.icon_status_cache.rwops != nil {
+        sdl2.FreeRW(v.icon_status_cache.rwops)
+      }
       v.is_active = false
       break
     }
@@ -293,7 +338,7 @@ text_set_cached :: proc(display: ^xlib.Display,
 
   white : sdl2.Color = {100, 200, 100, 255}
   active_window, ok_window_name := get_window_name(display, window_id).?
-  win_icon_surface, ok_window_icon := get_window_icon(display, window_id).?
+  win_icon, ok_window_icon := get_window_icon(display, window_id).?
 
   if !ok_window_name {
     return nil
@@ -312,9 +357,12 @@ text_set_cached :: proc(display: ^xlib.Display,
   win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
 
+  win_name_select_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
+  win_name_select_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(selector_renderer, win_name_surface)
+
   win_icon_texture : ^sdl2.Texture
   if ok_window_icon {
-    win_icon_texture = sdl2.CreateTextureFromSurface(renderer, win_icon_surface)
+    win_icon_texture = sdl2.CreateTextureFromSurface(renderer, win_icon.surface)
   }
   else {
     win_icon_texture = nil
@@ -323,7 +371,14 @@ text_set_cached :: proc(display: ^xlib.Display,
   text_width, text_height : i32
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
-  result := TextCache{win_name_surface, win_icon_surface, win_name_texture, win_icon_texture, window_id, text_width, text_height, true, font}
+  result := TextCache{RenderCache{win_name_surface, win_name_texture},
+                      IconCache{win_icon.surface, win_icon_texture, win_icon.rwops},
+                      RenderCache{win_name_select_surface, win_name_select_texture},
+                      window_id,
+                      text_width,
+                      text_height,
+                      true,
+                      font}
 
   if found_existing_window >= 0 {
     cache[found_existing_window] = result
@@ -338,10 +393,16 @@ text_set_cached :: proc(display: ^xlib.Display,
 free_cache :: proc() {
   for &v in cache {
     if v.is_active {
-      sdl2.FreeSurface(v.surface)
-      sdl2.DestroyTexture(v.texture)
-      sdl2.FreeSurface(v.icon_surface)
-      sdl2.DestroyTexture(v.icon_texture)
+      // TODO make separate proc to free RenderCache structs
+      sdl2.FreeSurface(v.window_status_cache.surface)
+      sdl2.DestroyTexture(v.window_status_cache.texture)
+      sdl2.FreeSurface(v.icon_status_cache.surface)
+      sdl2.DestroyTexture(v.icon_status_cache.texture)
+      sdl2.FreeSurface(v.window_selector_cache.surface)
+      sdl2.DestroyTexture(v.window_selector_cache.texture)
+      if v.icon_status_cache.rwops != nil {
+        sdl2.FreeRW(v.icon_status_cache.rwops)
+      }
       v.is_active = false
     }
   }
@@ -358,7 +419,7 @@ get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(cstring)
   return cast(cstring)props.value
 }
 
-get_window_class :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(cstring) {
+get_window_class :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(xlib.XClassHint) {
   hint_return : xlib.XClassHint
   result := xlib.GetClassHint(display, xid, &hint_return)
 
@@ -366,22 +427,24 @@ get_window_class :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(cstring
     return nil
   }
 
-  return hint_return.res_name
+  return hint_return
 }
 
-get_window_icon_from_file :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(^sdl2.Surface) {
-  class_name, class_name_ok := get_window_class(display, xid).?
+get_window_icon_from_file :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon) {
+  hint_return, class_name_ok := get_window_class(display, xid).?
+  defer xlib.Free(cast(rawptr)hint_return.res_name)
+  defer xlib.Free(cast(rawptr)hint_return.res_class)
   if !class_name_ok {
     return nil
   }
-  icon_surface, icon_ok := get_icon_from_class_name(class_name).?
+  icon, icon_ok := get_icon_from_class_name(hint_return.res_class).?
   if !icon_ok {
     return nil
   }
-  return icon_surface
+  return icon
 }
 
-get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(^sdl2.Surface) {
+get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
   if class_name == "" {
     return nil
   }
@@ -408,14 +471,14 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(^sdl2.Surface) {
   icon_path := strings.concatenate({"/usr/share/icons/hicolor/128x128/apps/", strings.clone_from_cstring(class_name), ".png"})
   icon_rwops := sdl2.RWFromFile(strings.clone_to_cstring(icon_path), "rb")
   result := image.LoadPNG_RW(icon_rwops)
-  return result
+  return SDLIcon{result, icon_rwops}
 }
 
-get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(^sdl2.Surface) {
-  window_icon_surface, window_icon_ok := get_window_icon_from_file(display, xid).?
-  if window_icon_ok {
-    fmt.println("found png icon for ", get_window_class(display, xid), window_icon_surface)
-    return window_icon_surface
+get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon) {
+  window_icon, window_icon_ok := get_window_icon_from_file(display, xid).?
+  if window_icon_ok && window_icon.surface != nil {
+    fmt.println("found png icon for ", get_window_class(display, xid), window_icon.surface)
+    return window_icon
   }
   else {
     fmt.println("couldn't find icon in png file", get_window_class(display, xid))
@@ -514,7 +577,8 @@ get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(^sdl2.Su
     0x000000FF
   )
 
-  return surface
+  fmt.println("got an icon from x for ",  get_window_class(display, xid))
+  return SDLIcon{surface, nil}
 }
 
 get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
@@ -744,7 +808,7 @@ main :: proc() {
     display, root,
     0, cast(i32)bar_height, // x, y
     cast(u32)300, 300, // width, height
-    0, // border width
+    2, // border width
     xlib.BlackPixel(display, screen),
     xlib.BlackPixel(display, screen)
   )
@@ -757,7 +821,7 @@ main :: proc() {
   // Map window
   sdl_window := sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)win))
   sdl_selector_win := sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)selector_win))
-  set_window_props(selector_win, 300, 300, display, false)
+  set_window_props(selector_win, 300, 300, display, true)
   xlib.MapWindow(display, win)
   xlib.Flush(display)
 
@@ -791,7 +855,7 @@ main :: proc() {
                xlib.GrabMode.GrabModeAsync)
 
   // Gets all currently active windows and adds them to the cache
-  cache_active_windows(display, root, renderer)
+  cache_active_windows(display, root, renderer, selector_renderer)
 
   init_digits(renderer)
   sep_width := digit_cache.widths[100]
@@ -815,6 +879,7 @@ main :: proc() {
             if !selector_showing {
               selector_showing = true
               xlib.MapWindow(display, selector_win)
+              sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
             }
             else {
               xlib.UnmapWindow(display, selector_win)
@@ -832,11 +897,17 @@ main :: proc() {
         if (current_event.type == xlib.EventType.DestroyNotify) {
           for &v in cache {
             if v.is_active && v.window_id == current_event.xdestroywindow.window {
+              // TODO, function for just free-ing one TextCache record
               fmt.println("Freeing window from cache")
-              sdl2.FreeSurface(v.surface)
-              sdl2.FreeSurface(v.icon_surface)
-              sdl2.DestroyTexture(v.texture)
-              sdl2.DestroyTexture(v.icon_texture)
+              sdl2.FreeSurface(v.window_status_cache.surface)
+              sdl2.FreeSurface(v.icon_status_cache.surface)
+              sdl2.FreeSurface(v.window_selector_cache.surface)
+              sdl2.DestroyTexture(v.window_status_cache.texture)
+              sdl2.DestroyTexture(v.icon_status_cache.texture)
+              sdl2.DestroyTexture(v.window_selector_cache.texture)
+              if v.icon_status_cache.rwops != nil {
+                sdl2.FreeRW(v.icon_status_cache.rwops)
+              }
               v.is_active = false
             }
           }
@@ -844,7 +915,7 @@ main :: proc() {
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
           if window_id != 0 {
-            text_set_cached(display, renderer, window_id)
+            text_set_cached(display, renderer, selector_renderer, window_id)
 
             xlib.SelectInput(display,
                              window_id,
@@ -858,7 +929,7 @@ main :: proc() {
               current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
             window_id := current_event.xproperty.window
             if window_id != 0 {
-              text_set_cached(display, renderer, window_id)
+              text_set_cached(display, renderer, selector_renderer, window_id)
             }
           }
         }
@@ -871,22 +942,37 @@ main :: proc() {
         }
       }
 
+      if selector_showing {
+        offset :i32 = 0
+        sdl2.SetRenderDrawColor(selector_renderer, 23, 0, 60, 255)
+        sdl2.RenderClear(selector_renderer)
+        sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
+        for v in &cache {
+          if v.is_active {
+            rect : sdl2.Rect = {0, offset, v.text_width, v.text_height}
+            sdl2.RenderCopy(selector_renderer, v.window_selector_cache.texture, nil, &rect)
+            offset += v.text_height
+          }
+        }
+        sdl2.RenderPresent(selector_renderer)
+      }
+
       sdl2.SetRenderDrawColor(renderer, 0, 0, 0, 255)
       sdl2.RenderClear(renderer)
       active_window, ok_window := get_active_window(display).?
 
       if ok_window {
-        cached_texture, ok_text := text_get_cached(display, renderer, active_window).?
+        cached_texture, ok_text := text_get_cached(display, renderer, selector_renderer, active_window).?
 
-        if ok_text && cached_texture.icon_texture != nil {
+        if ok_text && cached_texture.icon_status_cache.texture != nil {
           rect : sdl2.Rect = {32, 5, cached_texture.text_width, cached_texture.text_height}
           icon_rect : sdl2.Rect = {0, 0, 32, 32}
-          sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
-          sdl2.RenderCopy(renderer, cached_texture.icon_texture, nil, &icon_rect)
+          sdl2.RenderCopy(renderer, cached_texture.window_status_cache.texture, nil, &rect)
+          sdl2.RenderCopy(renderer, cached_texture.icon_status_cache.texture, nil, &icon_rect)
         }
         else if ok_text {
           rect : sdl2.Rect = {0, 5, cached_texture.text_width, cached_texture.text_height}
-          sdl2.RenderCopy(renderer, cached_texture.texture, nil, &rect)
+          sdl2.RenderCopy(renderer, cached_texture.window_status_cache.texture, nil, &rect)
         }
         else {
           fmt.println("Failed to get any text to render!")
