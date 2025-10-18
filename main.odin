@@ -437,11 +437,15 @@ get_window_icon_from_file :: proc(display: ^xlib.Display, xid: xlib.XID) -> Mayb
   if !class_name_ok {
     return nil
   }
-  icon, icon_ok := get_icon_from_class_name(hint_return.res_class).?
-  if !icon_ok {
-    return nil
+  icon_from_name, icon_from_name_ok := get_icon_from_class_name(hint_return.res_name).?
+  icon_from_class, icon_from_class_ok := get_icon_from_class_name(hint_return.res_class).?
+  if icon_from_name_ok && icon_from_name.surface != nil {
+    return icon_from_name
   }
-  return icon
+  if icon_from_class_ok && icon_from_class.surface != nil {
+    return icon_from_class
+  }
+  return nil
 }
 
 get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
