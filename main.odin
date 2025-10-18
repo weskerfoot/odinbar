@@ -116,7 +116,10 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
   padded[0] = "0"
   for i in 0..<10 {
     padded[1] = strconv.itoa(c, i)
-    num_st = strings.clone_to_cstring(strings.concatenate(padded[:]))
+    concatenated := strings.concatenate(padded[:])
+    defer delete(concatenated)
+    num_st = strings.clone_to_cstring(concatenated)
+    defer delete(num_st)
     ttf.SizeUTF8(font, num_st, &text_width, &text_height)
     digit_cache.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
     digit_cache.textures[i] = sdl2.CreateTextureFromSurface(renderer, digit_cache.surfaces[i])
@@ -125,6 +128,7 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
   }
   for i in 10..<100 {
     num_st = strings.clone_to_cstring(strconv.itoa(c, i))
+    defer delete(num_st)
     ttf.SizeUTF8(font, num_st, &text_width, &text_height)
     digit_cache.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
     digit_cache.textures[i] = sdl2.CreateTextureFromSurface(renderer, digit_cache.surfaces[i])
@@ -308,6 +312,7 @@ text_set_cached :: proc(display: ^xlib.Display,
                         selector_renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCache) {
 
+  defer free_all(context.allocator)
   if window_id == 0 {
     fmt.println("got window_id == 0 in text_set_cached")
     return nil
