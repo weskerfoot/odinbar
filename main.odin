@@ -37,6 +37,7 @@ TextCache :: struct {
   window_status_cache: RenderCache,
   icon_status_cache: IconCache,
   window_selector_cache: RenderCache,
+  window_name: cstring,
   window_id: xlib.XID,
   text_width: i32,
   text_height: i32,
@@ -327,6 +328,7 @@ text_set_cached :: proc(display: ^xlib.Display,
       sdl2.DestroyTexture(v.icon_status_cache.texture)
       sdl2.FreeSurface(v.window_selector_cache.surface)
       sdl2.DestroyTexture(v.window_selector_cache.texture)
+      xlib.Free(cast(rawptr)v.window_name)
       if v.icon_status_cache.rwops != nil {
         sdl2.FreeRW(v.icon_status_cache.rwops)
       }
@@ -374,6 +376,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   result := TextCache{RenderCache{win_name_surface, win_name_texture},
                       IconCache{win_icon.surface, win_icon_texture, win_icon.rwops},
                       RenderCache{win_name_select_surface, win_name_select_texture},
+                      active_window,
                       window_id,
                       text_width,
                       text_height,
@@ -400,6 +403,7 @@ free_cache :: proc() {
       sdl2.DestroyTexture(v.icon_status_cache.texture)
       sdl2.FreeSurface(v.window_selector_cache.surface)
       sdl2.DestroyTexture(v.window_selector_cache.texture)
+      xlib.Free(cast(rawptr)v.window_name)
       if v.icon_status_cache.rwops != nil {
         sdl2.FreeRW(v.icon_status_cache.rwops)
       }
@@ -452,9 +456,12 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
   if class_name == "" {
     return nil
   }
-  desktop_filepath := strings.concatenate({"/usr/share/applications/", strings.clone_from_cstring(class_name), ".desktop"})
-	data, ok_desktop := os.read_entire_file(desktop_filepath, context.allocator)
-	defer delete(data, context.allocator)
+  class_name_st := strings.clone_from_cstring(class_name)
+  desktop_filepath := strings.concatenate({"/usr/share/applications/", class_name_st, ".desktop"})
+  defer delete(class_name_st)
+  defer delete(desktop_filepath)
+	data, ok_desktop := os.read_entire_file(desktop_filepath)
+	defer delete(data)
 
 	if !ok_desktop {
 		return nil
@@ -472,8 +479,11 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
     return nil
   }
 
-  icon_path := strings.concatenate({"/usr/share/icons/hicolor/128x128/apps/", strings.clone_from_cstring(class_name), ".png"})
-  icon_rwops := sdl2.RWFromFile(strings.clone_to_cstring(icon_path), "rb")
+  icon_path := strings.concatenate({"/usr/share/icons/hicolor/128x128/apps/", class_name_st, ".png"})
+  icon_path_cst := strings.clone_to_cstring(icon_path)
+  defer delete(icon_path_cst)
+  defer delete(icon_path)
+  icon_rwops := sdl2.RWFromFile(icon_path_cst, "rb")
   result := image.LoadPNG_RW(icon_rwops)
   return SDLIcon{result, icon_rwops}
 }
@@ -621,6 +631,11 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
   return window_id
 }
 
+charset : cstring = "charset"
+family : cstring = "family"
+style : cstring = "style"
+file : cstring = "file"
+
 get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   pat := FcNameParse(cast(^c.char)preferred_font)
   charset := FcCharSetCreate()
@@ -638,14 +653,14 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
     p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + cast(i64)len))
   }
 
-  FcPatternAddCharSet(pat, cast(^u8)strings.clone_to_cstring("charset"), charset)
+  FcPatternAddCharSet(pat, cast(^u8)charset, charset)
 
   FcConfigSubstitute(nil, pat, FcMatchKind.FcMatchPattern)
   FcDefaultSubstitute(pat)
   fs := FcFontSetCreate()
-  os := FcObjectSetBuild(cast(^u8)strings.clone_to_cstring("family"),
-                         strings.clone_to_cstring("style"),
-                         strings.clone_to_cstring("file"),
+  os := FcObjectSetBuild(cast(^u8)family,
+                         style,
+                         file,
                          nil)
 
   font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &fc_result)
@@ -667,7 +682,7 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
     if fs.nfont > 0 {
       v: FcValue
       font: ^FcPattern = FcPatternFilter(fs.fonts^, os)
-      FcPatternGet(font, cast(^u8)strings.clone_to_cstring("file"), 0, &v)
+      FcPatternGet(font, cast(^u8)file, 0, &v)
       if v.u.f != nil {
         found_font := cast(cstring)v.u.f
         found_font_st := strings.clone_from_cstring(found_font)
@@ -677,12 +692,16 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
             ttf_font^ = f.font
             found_font_cached = true
             fmt.println("font cache hit")
+            break
           }
         }
         if !found_font_cached {
           fmt.println("font cache miss")
           ttf_font^ = ttf.OpenFont(found_font, 18)
           append(&font_cache, FontCache{found_font_st, ttf_font^})
+        }
+        else {
+          delete(found_font_st)
         }
         defer FcPatternDestroy(font)
       }
@@ -908,6 +927,7 @@ main :: proc() {
               sdl2.DestroyTexture(v.window_status_cache.texture)
               sdl2.DestroyTexture(v.icon_status_cache.texture)
               sdl2.DestroyTexture(v.window_selector_cache.texture)
+              xlib.Free(cast(rawptr)v.window_name)
               if v.icon_status_cache.rwops != nil {
                 sdl2.FreeRW(v.icon_status_cache.rwops)
               }
