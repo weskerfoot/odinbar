@@ -641,6 +641,68 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   }
 }
 
+set_window_props :: proc(win: xlib.Window,
+                         win_height: i64,
+                         win_width: i64,
+                         display: ^xlib.Display,
+                         set_struts: bool) {
+  net_wm_window_type := xlib.InternAtom(display, "_NET_WM_WINDOW_TYPE", false)
+  net_wm_window_type_dock := xlib.InternAtom(display, "_NET_WM_WINDOW_TYPE_DOCK", false)
+  xlib.ChangeProperty(
+      display, win,
+      net_wm_window_type,
+      xlib.XA_ATOM, 32,
+      xlib.PropModeReplace,
+      &net_wm_window_type_dock,
+      1
+  )
+
+  // Set _NET_WM_DESKTOP to 0xFFFFFFFF (all desktops)
+  net_wm_desktop := xlib.InternAtom(display, "_NET_WM_DESKTOP", false)
+  all_desktops :libc.long = 0xFFFFFFFF
+  xlib.ChangeProperty(
+      display, win,
+      net_wm_desktop,
+      XA_CARDINAL, 32,
+      xlib.PropModeReplace,
+      &all_desktops,
+      1
+  )
+
+  if set_struts {
+    // Set struts to reserve space (top bar, full width)
+    net_wm_strut := xlib.InternAtom(display, "_NET_WM_STRUT", false)
+    strut := [4]libc.long{0, 0, win_height, 0} // left, right, top, bottom
+    xlib.ChangeProperty(
+        display, win,
+        net_wm_strut,
+        XA_CARDINAL, 32,
+        xlib.PropModeReplace,
+        &strut[0],
+        4
+    )
+
+    net_wm_strut_partial := xlib.InternAtom(display, "_NET_WM_STRUT_PARTIAL", false)
+    strut_partial := [12]libc.long{
+        0, 0,                // left, right
+        win_height, 0,       // top, bottom
+        0, 0,                // left_start_y, left_end_y
+        0, 0,                // right_start_y, right_end_y
+        0, win_width,     // top_start_x, top_end_x
+        0, 0                 // bottom_start_x, bottom_end_x
+    }
+
+    xlib.ChangeProperty(
+        display, win,
+        net_wm_strut_partial,
+        XA_CARDINAL, 32,
+        xlib.PropModeReplace,
+        &strut_partial[0],
+        12
+    )
+  }
+}
+
 main :: proc() {
   display := xlib.OpenDisplay(nil)
   displayHeight := xlib.DisplayHeight(display, 0)
@@ -676,66 +738,18 @@ main :: proc() {
       xlib.BlackPixel(display, screen),
       xlib.BlackPixel(display, screen)
   )
-  net_wm_window_type := xlib.InternAtom(display, "_NET_WM_WINDOW_TYPE", false)
-  net_wm_window_type_dock := xlib.InternAtom(display, "_NET_WM_WINDOW_TYPE_DOCK", false)
-  xlib.ChangeProperty(
-      display, win,
-      net_wm_window_type,
-      xlib.XA_ATOM, 32,
-      xlib.PropModeReplace,
-      &net_wm_window_type_dock,
-      1
-  )
 
-  // Set _NET_WM_DESKTOP to 0xFFFFFFFF (all desktops)
-  net_wm_desktop := xlib.InternAtom(display, "_NET_WM_DESKTOP", false)
-  all_desktops :libc.long = 0xFFFFFFFF
-  xlib.ChangeProperty(
-      display, win,
-      net_wm_desktop,
-      XA_CARDINAL, 32,
-      xlib.PropModeReplace,
-      &all_desktops,
-      1
-  )
+  // window selector
+  selector_win :xlib.Window
 
-
-  // Set struts to reserve space (top bar, full width)
-  net_wm_strut := xlib.InternAtom(display, "_NET_WM_STRUT", false)
-  strut := [4]libc.long{0, 0, cast(i64)bar_height, 0} // left, right, top, bottom
-  xlib.ChangeProperty(
-      display, win,
-      net_wm_strut,
-      XA_CARDINAL, 32,
-      xlib.PropModeReplace,
-      &strut[0],
-      4
-  )
-
-  net_wm_strut_partial := xlib.InternAtom(display, "_NET_WM_STRUT_PARTIAL", false)
-  strut_partial := [12]libc.long{
-      0, 0,                // left, right
-      cast(i64)bar_height, 0,       // top, bottom
-      0, 0,                // left_start_y, left_end_y
-      0, 0,                // right_start_y, right_end_y
-      0, cast(i64)screen_width,     // top_start_x, top_end_x
-      0, 0                 // bottom_start_x, bottom_end_x
-  }
-
-  xlib.ChangeProperty(
-      display, win,
-      net_wm_strut_partial,
-      XA_CARDINAL, 32,
-      xlib.PropModeReplace,
-      &strut_partial[0],
-      12
-  )
+  set_window_props(win, cast(i64)screen_width, cast(i64)bar_height, display, true)
 
   // Select input events
   xlib.SelectInput(display, win, {xlib.EventMaskBits.Exposure})
 
   // Map window
   sdl_window := sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)win))
+  sdl_selector_win : ^sdl2.Window
   xlib.MapWindow(display, win)
   xlib.Flush(display)
 
@@ -777,10 +791,39 @@ main :: proc() {
     fmt.panicf("Invalid timezone")
   }
 
+  selector_showing :bool = false
+
   for running {
       for sdl2.PollEvent(&event) != false {
           if event.type == sdl2.EventType.QUIT {
               running = false
+          }
+          else if event.type == sdl2.EventType.MOUSEBUTTONDOWN {
+            fmt.println("button down")
+            fmt.println(event)
+            if !selector_showing {
+              selector_showing = true
+              selector_win = xlib.CreateSimpleWindow(
+                display, root,
+                0, cast(i32)bar_height, // x, y
+                cast(u32)150, 150, // width, height
+                0, // border width
+                xlib.BlackPixel(display, screen),
+                xlib.BlackPixel(display, screen)
+              )
+              xlib.MapWindow(display, selector_win)
+              sdl_selector_win = sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)selector_win))
+              set_window_props(selector_win, 150, 150, display, false)
+            }
+            else {
+              sdl2.DestroyWindow(sdl_selector_win)
+              xlib.DestroyWindow(display, selector_win)
+              selector_showing = false
+            }
+          }
+          else if event.type == sdl2.EventType.MOUSEBUTTONUP {
+            fmt.println("button up")
+            fmt.println(event)
           }
       }
 
