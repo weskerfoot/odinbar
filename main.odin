@@ -481,11 +481,10 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
 get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon) {
   window_icon, window_icon_ok := get_window_icon_from_file(display, xid).?
   if window_icon_ok && window_icon.surface != nil {
-    fmt.println("found png icon for ", get_window_class(display, xid), window_icon.surface)
     return window_icon
   }
   else {
-    fmt.println("couldn't find icon in png file", get_window_class(display, xid))
+    fmt.println("couldn't find icon in png file")
   }
 
   window_icon_atom := xlib.InternAtom(display, "_NET_WM_ICON", false)
@@ -581,7 +580,6 @@ get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon)
     0x000000FF
   )
 
-  fmt.println("got an icon from x for ",  get_window_class(display, xid))
   return SDLIcon{surface, nil}
 }
 
@@ -825,7 +823,7 @@ main :: proc() {
   // Map window
   sdl_window := sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)win))
   sdl_selector_win := sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)selector_win))
-  set_window_props(selector_win, 300, 300, display, true)
+  set_window_props(selector_win, 300, 300, display, false)
   xlib.MapWindow(display, win)
   xlib.Flush(display)
 
@@ -865,6 +863,7 @@ main :: proc() {
   sep_width := digit_cache.widths[100]
 
   tz, ok_tz := timezone.region_load("America/Toronto")
+  defer timezone.region_destroy(tz)
 
   if !ok_tz {
     fmt.panicf("Invalid timezone")
