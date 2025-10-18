@@ -740,7 +740,14 @@ main :: proc() {
   )
 
   // window selector
-  selector_win :xlib.Window
+  selector_win := xlib.CreateSimpleWindow(
+    display, root,
+    0, cast(i32)bar_height, // x, y
+    cast(u32)300, 300, // width, height
+    0, // border width
+    xlib.BlackPixel(display, screen),
+    xlib.BlackPixel(display, screen)
+  )
 
   set_window_props(win, cast(i64)screen_width, cast(i64)bar_height, display, true)
 
@@ -749,12 +756,16 @@ main :: proc() {
 
   // Map window
   sdl_window := sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)win))
-  sdl_selector_win : ^sdl2.Window
+  sdl_selector_win := sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)selector_win))
+  set_window_props(selector_win, 300, 300, display, false)
   xlib.MapWindow(display, win)
   xlib.Flush(display)
 
   renderer := sdl2.CreateRenderer(sdl_window, -1, {sdl2.RendererFlags.SOFTWARE})
   defer sdl2.DestroyRenderer(renderer)
+
+  selector_renderer := sdl2.CreateRenderer(sdl_selector_win, -1, {sdl2.RendererFlags.SOFTWARE})
+  defer sdl2.DestroyRenderer(selector_renderer)
 
   running : bool = true
   event : sdl2.Event
@@ -803,21 +814,10 @@ main :: proc() {
             fmt.println(event)
             if !selector_showing {
               selector_showing = true
-              selector_win = xlib.CreateSimpleWindow(
-                display, root,
-                0, cast(i32)bar_height, // x, y
-                cast(u32)150, 150, // width, height
-                0, // border width
-                xlib.BlackPixel(display, screen),
-                xlib.BlackPixel(display, screen)
-              )
               xlib.MapWindow(display, selector_win)
-              sdl_selector_win = sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)selector_win))
-              set_window_props(selector_win, 150, 150, display, false)
             }
             else {
-              sdl2.DestroyWindow(sdl_selector_win)
-              xlib.DestroyWindow(display, selector_win)
+              xlib.UnmapWindow(display, selector_win)
               selector_showing = false
             }
           }
@@ -845,13 +845,6 @@ main :: proc() {
           window_id := current_event.xmap.window
           if window_id != 0 {
             text_set_cached(display, renderer, window_id)
-
-            fmt.println("======")
-            for v in cache {
-              if v.is_active {
-                fmt.println(get_window_name(display, v.window_id))
-              }
-            }
 
             xlib.SelectInput(display,
                              window_id,
