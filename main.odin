@@ -813,7 +813,7 @@ main :: proc() {
     xlib.BlackPixel(display, screen)
   )
 
-  set_window_props(win, cast(i64)screen_width, cast(i64)bar_height, display, true)
+  set_window_props(win, cast(i64)bar_height, cast(i64)screen_width, display, true)
 
   // Select input events
   xlib.SelectInput(display, win, {xlib.EventMaskBits.Exposure})
