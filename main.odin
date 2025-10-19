@@ -823,6 +823,7 @@ main :: proc() {
   else {
     odinbar_path_expanded = odinbar_path
   }
+  defer posix.wordfree(&odinbar_wordexp)
 
   root := xlib.RootWindow(display, screen)
 
