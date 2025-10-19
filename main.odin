@@ -306,9 +306,6 @@ text_set_cached :: proc(display: ^xlib.Display,
                         selector_renderer: ^sdl2.Renderer,
                         window_id: xlib.XID) -> Maybe(TextCache) {
 
-  defer free_all(context.allocator)
-  defer free_all(context.temp_allocator)
-
   if window_id == 0 {
     fmt.println("got window_id == 0 in text_set_cached")
     return nil
@@ -713,7 +710,7 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
           append(&font_cache, FontCache{found_font_st, ttf_font^})
         }
         else {
-          delete(found_font_st)
+          defer delete(found_font_st)
         }
         defer FcPatternDestroy(font)
       }
@@ -953,6 +950,9 @@ main :: proc() {
         }
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
+          if selector_showing {
+            sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
+          }
           if window_id != 0 {
             text_set_cached(display, renderer, selector_renderer, window_id)
 
@@ -968,6 +968,9 @@ main :: proc() {
               current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
             window_id := current_event.xproperty.window
             if window_id != 0 {
+              if selector_showing {
+                sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
+              }
               text_set_cached(display, renderer, selector_renderer, window_id)
             }
           }
@@ -985,7 +988,6 @@ main :: proc() {
         offset :i32 = 0
         sdl2.SetRenderDrawColor(selector_renderer, 23, 0, 60, 255)
         sdl2.RenderClear(selector_renderer)
-        sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
         for v in &cache {
           if v.is_active {
             rect : sdl2.Rect = {0, offset, v.text_width, v.text_height}
