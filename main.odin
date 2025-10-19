@@ -724,16 +724,16 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   }
 
   if charset != nil {
-    defer FcCharSetDestroy(charset)
+    FcCharSetDestroy(charset)
   }
   if pat != nil {
-    defer FcPatternDestroy(pat)
+    FcPatternDestroy(pat)
   }
   if font_patterns != nil {
-    defer FcFontSetDestroy(font_patterns)
+    FcFontSetDestroy(font_patterns)
   }
   if os != nil {
-    defer FcObjectSetDestroy(os)
+    FcObjectSetDestroy(os)
   }
 }
 
