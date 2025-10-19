@@ -83,14 +83,6 @@ SDLIcon :: struct {
   rwops: ^sdl2.RWops
 }
 
-IconImageCache :: struct {
-  class_name: cstring,
-  icon: SDLIcon,
-  is_active: bool
-}
-
-icon_image_cache: #soa[dynamic]IconImageCache
-
 DigitTextCache :: struct {
   textures: [101]^sdl2.Texture,
   surfaces: [101]^sdl2.Surface,
@@ -313,6 +305,8 @@ text_set_cached :: proc(display: ^xlib.Display,
                         window_id: xlib.XID) -> Maybe(TextCache) {
 
   defer free_all(context.allocator)
+  defer free_all(context.temp_allocator)
+
   if window_id == 0 {
     fmt.println("got window_id == 0 in text_set_cached")
     return nil
