@@ -642,10 +642,11 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
   return window_id
 }
 
-charset : cstring = "charset"
-family : cstring = "family"
-style : cstring = "style"
-file : cstring = "file"
+charset_cst : cstring = "charset"
+family_cst : cstring = "family"
+style_cst : cstring = "style"
+file_cst : cstring = "file"
+
 
 get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   pat := FcNameParse(cast(^c.char)preferred_font)
@@ -664,14 +665,14 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
     p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + cast(i64)len))
   }
 
-  FcPatternAddCharSet(pat, cast(^u8)charset, charset)
+  FcPatternAddCharSet(pat, cast(^u8)charset_cst, charset)
 
   FcConfigSubstitute(nil, pat, FcMatchKind.FcMatchPattern)
   FcDefaultSubstitute(pat)
   fs := FcFontSetCreate()
-  os := FcObjectSetBuild(cast(^u8)family,
-                         style,
-                         file,
+  os := FcObjectSetBuild(cast(^u8)family_cst,
+                         style_cst,
+                         file_cst,
                          nil)
 
   font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &fc_result)
@@ -693,7 +694,7 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
     if fs.nfont > 0 {
       v: FcValue
       font: ^FcPattern = FcPatternFilter(fs.fonts^, os)
-      FcPatternGet(font, cast(^u8)file, 0, &v)
+      FcPatternGet(font, cast(^u8)file_cst, 0, &v)
       if v.u.f != nil {
         found_font := cast(cstring)v.u.f
         found_font_st := strings.clone_from_cstring(found_font)
