@@ -30,7 +30,8 @@ RenderCache :: struct {
 IconCache :: struct {
   surface: ^sdl2.Surface,
   texture: ^sdl2.Texture,
-  rwops: ^sdl2.RWops
+  rwops: ^sdl2.RWops,
+  image_buf: [dynamic]u8 // underlying buffer if not nil
 }
 
 TextCache :: struct {
@@ -80,7 +81,8 @@ font_cache: #soa[dynamic]FontCache
 // This is different from the ones in _NET_WM_ICON
 SDLIcon :: struct {
   surface: ^sdl2.Surface,
-  rwops: ^sdl2.RWops
+  image_buf: [dynamic]u8, // underlying buffer if not nil
+  rwops: ^sdl2.RWops // possibly nil
 }
 
 DigitTextCache :: struct {
@@ -331,6 +333,9 @@ text_set_cached :: proc(display: ^xlib.Display,
       if v.icon_status_cache.rwops != nil {
         sdl2.FreeRW(v.icon_status_cache.rwops)
       }
+      if v.icon_status_cache.image_buf != nil {
+        delete(v.icon_status_cache.image_buf)
+      }
       v.is_active = false
       break
     }
@@ -377,7 +382,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
   result := TextCache{RenderCache{win_name_surface, win_name_texture},
-                      IconCache{win_icon.surface, win_icon_texture, win_icon.rwops},
+                      IconCache{win_icon.surface, win_icon_texture, win_icon.rwops, win_icon.image_buf},
                       RenderCache{win_name_select_surface, win_name_select_texture},
                       strings.clone_from_cstring(active_window),
                       window_id,
@@ -409,6 +414,9 @@ free_cache :: proc() {
       delete(v.window_name)
       if v.icon_status_cache.rwops != nil {
         sdl2.FreeRW(v.icon_status_cache.rwops)
+      }
+      if v.icon_status_cache.image_buf != nil {
+        delete(v.icon_status_cache.image_buf)
       }
       v.is_active = false
     }
@@ -488,7 +496,7 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
   defer delete(icon_path)
   icon_rwops := sdl2.RWFromFile(icon_path_cst, "rb")
   result := image.LoadPNG_RW(icon_rwops)
-  return SDLIcon{result, icon_rwops}
+  return SDLIcon{result, nil, icon_rwops}
 }
 
 get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon) {
@@ -593,7 +601,7 @@ get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon)
     0x000000FF
   )
 
-  return SDLIcon{surface, nil}
+  return SDLIcon{surface, image_buf, nil}
 }
 
 get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
@@ -933,6 +941,9 @@ main :: proc() {
               delete(v.window_name)
               if v.icon_status_cache.rwops != nil {
                 sdl2.FreeRW(v.icon_status_cache.rwops)
+              }
+              if v.icon_status_cache.image_buf != nil {
+                delete(v.icon_status_cache.image_buf)
               }
               v.is_active = false
             }
