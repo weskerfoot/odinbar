@@ -27,6 +27,14 @@ RenderCache :: struct {
   texture: ^sdl2.Texture
 }
 
+// Convenience struct for procs that can return an icon
+// this stuff along with the texture is stored in IconCache
+SDLIcon :: struct {
+  surface: ^sdl2.Surface,
+  image_buf: [dynamic]u8, // underlying buffer if not nil
+  rwops: ^sdl2.RWops // possibly nil
+}
+
 IconCache :: struct {
   surface: ^sdl2.Surface,
   texture: ^sdl2.Texture,
@@ -76,14 +84,6 @@ FontCache :: struct {
 }
 
 font_cache: #soa[dynamic]FontCache
-
-// For caching icon files read from disk
-// This is different from the ones in _NET_WM_ICON
-SDLIcon :: struct {
-  surface: ^sdl2.Surface,
-  image_buf: [dynamic]u8, // underlying buffer if not nil
-  rwops: ^sdl2.RWops // possibly nil
-}
 
 DigitTextCache :: struct {
   textures: [101]^sdl2.Texture,
