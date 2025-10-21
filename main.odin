@@ -645,34 +645,71 @@ style_cst : cstring = "style"
 file_cst : cstring = "file"
 
 
+check_text_renders :: proc(text: cstring, ttf_font: ^ttf.Font) -> bool {
+  ucs4: c.uint
+  p: ^c.uchar = cast(^c.uchar)text
+
+  font_renders := true
+
+  text_len := cast(i32)libc.strlen(cast(cstring)p)
+
+  for p^ != 0 {
+    char_len : c.int = FcUtf8ToUcs4(p, &ucs4, text_len)
+    if char_len <= 0 {
+      break
+    }
+    if ttf.GlyphIsProvided32(ttf_font, cast(rune)ucs4) == 0 {
+      font_renders = false
+    }
+    text_len -= char_len
+    p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + cast(i64)char_len))
+  }
+  return font_renders
+}
+
 get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
+  // Early check to see if the text can be rendered by any cached fonts
+  for f in font_cache {
+    if check_text_renders(text, f.font) {
+      ttf_font^ = f.font
+      return
+    }
+  }
+
   pat := FcNameParse(cast(^c.char)preferred_font)
   charset := FcCharSetCreate()
+  defer FcCharSetDestroy(charset)
   fc_result : FcResult
 
   ucs4: c.uint
   p: ^c.uchar = cast(^c.uchar)text
 
+  text_len := cast(i32)libc.strlen(cast(cstring)p)
+
   for p^ != 0 {
-    len : c.int = FcUtf8ToUcs4(p, &ucs4, cast(i32)libc.strlen(cast(cstring)p))
-    if len <= 0 {
+    char_len : c.int = FcUtf8ToUcs4(p, &ucs4, text_len)
+    if char_len <= 0 {
       break
     }
     FcCharSetAddChar(charset, ucs4)
-    p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + cast(i64)len))
+    text_len -= char_len
+    p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + cast(i64)char_len))
   }
 
   FcPatternAddCharSet(pat, cast(^u8)charset_cst, charset)
 
   FcConfigSubstitute(nil, pat, FcMatchKind.FcMatchPattern)
   FcDefaultSubstitute(pat)
+  defer FcPatternDestroy(pat)
   fs := FcFontSetCreate()
   os := FcObjectSetBuild(cast(^u8)family_cst,
                          style_cst,
                          file_cst,
                          nil)
 
+  defer FcObjectSetDestroy(os)
   font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &fc_result)
+  defer FcFontSetDestroy(font_patterns)
 
   if font_patterns == nil || font_patterns.nfont == 0 {
     fmt.panicf("No fonts configured on your system\n")
@@ -719,19 +756,6 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   }
   else {
     fmt.panicf("No usable fonts on the system, check the font family")
-  }
-
-  if charset != nil {
-    FcCharSetDestroy(charset)
-  }
-  if pat != nil {
-    FcPatternDestroy(pat)
-  }
-  if font_patterns != nil {
-    FcFontSetDestroy(font_patterns)
-  }
-  if os != nil {
-    FcObjectSetDestroy(os)
   }
 }
 
