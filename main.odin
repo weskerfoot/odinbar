@@ -356,7 +356,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   }
 
   font: ^ttf.Font
-  get_matching_font(active_window, &font)
+  bytes_processed, bytes_processed_ok := get_matching_font(active_window, &font).?
   if font == nil {
     fmt.panicf("Font was nil")
   }
@@ -645,46 +645,49 @@ style_cst : cstring = "style"
 file_cst : cstring = "file"
 
 
-check_text_renders :: proc(text: cstring, ttf_font: ^ttf.Font) -> bool {
+check_text_renders :: proc(text: cstring, ttf_font: ^ttf.Font) -> i32 {
   ucs4: c.uint
   p: ^c.uchar = cast(^c.uchar)text
 
   font_renders := true
 
   text_len := cast(i32)libc.strlen(cast(cstring)p)
+  bytes_processed :i32 = 0
 
   for p^ != 0 {
     char_len : c.int = FcUtf8ToUcs4(p, &ucs4, text_len)
+    bytes_processed += char_len
     if char_len <= 0 {
       break
     }
     if ttf.GlyphIsProvided32(ttf_font, cast(rune)ucs4) == 0 {
-      font_renders = false
+      break
     }
     text_len -= char_len
     p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + cast(i64)char_len))
   }
-  return font_renders
+  return bytes_processed
 }
 
-get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
+get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) -> Maybe(i32) {
+  p: ^c.uchar = cast(^c.uchar)text
+  text_len := cast(i32)libc.strlen(cast(cstring)p)
+
   // Early check to see if the text can be rendered by any cached fonts
   for f in font_cache {
-    if check_text_renders(text, f.font) {
+    bytes_processed := check_text_renders(text, f.font)
+    if bytes_processed == text_len {
+      fmt.println("found matching font before running get_matching_font")
       ttf_font^ = f.font
-      return
+      return bytes_processed
     }
   }
 
+  ucs4: c.uint
   pat := FcNameParse(cast(^c.char)preferred_font)
   charset := FcCharSetCreate()
   defer FcCharSetDestroy(charset)
   fc_result : FcResult
-
-  ucs4: c.uint
-  p: ^c.uchar = cast(^c.uchar)text
-
-  text_len := cast(i32)libc.strlen(cast(cstring)p)
 
   for p^ != 0 {
     char_len : c.int = FcUtf8ToUcs4(p, &ucs4, text_len)
@@ -757,6 +760,10 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) {
   else {
     fmt.panicf("No usable fonts on the system, check the font family")
   }
+  if ttf_font^ != nil {
+    return check_text_renders(text, ttf_font^)
+  }
+  return nil
 }
 
 set_window_props :: proc(win: xlib.Window,
