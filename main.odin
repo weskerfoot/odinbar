@@ -64,18 +64,10 @@ get_max_width :: proc() -> i32 {
   return total + 100
 }
 
-get_max_height :: proc(display: ^xlib.Display) -> i32 {
+get_max_height :: proc() -> i32 {
   max_height :i32 = 0
   count_active :i32 = 0
-  unmapped := xlib.WindowMapState.IsUnmapped
-  unviewable := xlib.WindowMapState.IsUnviewable
   for v in &cache {
-    attrs, attrs_ok := get_attributes(display, v.window_id).?
-    if attrs_ok {
-      if attrs.map_state == unviewable || attrs.map_state == unmapped {
-        continue
-      }
-    }
     if v.is_active {
       max_height = max(max_height, v.text_height)
       count_active += 1
@@ -959,7 +951,7 @@ main :: proc() {
             if !selector_showing {
               selector_showing = true
               xlib.MapWindow(display, selector_win)
-              sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height(display))
+              sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
             }
             else {
               xlib.UnmapWindow(display, selector_win)
@@ -999,7 +991,7 @@ main :: proc() {
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
           if selector_showing {
-            sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height(display))
+            sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
           }
           if window_id != 0 {
             text_set_cached(display, renderer, selector_renderer, window_id)
@@ -1017,7 +1009,7 @@ main :: proc() {
             window_id := current_event.xproperty.window
             if window_id != 0 {
               if selector_showing {
-                sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height(display))
+                sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
               }
               text_set_cached(display, renderer, selector_renderer, window_id)
             }
@@ -1036,15 +1028,7 @@ main :: proc() {
         offset :i32 = 0
         sdl2.SetRenderDrawColor(selector_renderer, 23, 0, 60, 255)
         sdl2.RenderClear(selector_renderer)
-        unmapped := xlib.WindowMapState.IsUnmapped
-        unviewable := xlib.WindowMapState.IsUnviewable
         for v in &cache {
-          attrs, attrs_ok := get_attributes(display, v.window_id).?
-          if attrs_ok {
-            if attrs.map_state == unviewable || attrs.map_state == unmapped {
-              continue
-            }
-          }
           if v.is_active {
             rect : sdl2.Rect = {0, offset, v.text_width, v.text_height}
             sdl2.RenderCopy(selector_renderer, v.window_selector_cache.texture, nil, &rect)
