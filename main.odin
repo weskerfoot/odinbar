@@ -20,7 +20,7 @@ import "vendor:x11/xlib"
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
-preferred_font: cstring = "Arial"
+preferred_font: cstring = "Noto Sans"
 
 RenderCache :: struct {
   surface: ^sdl2.Surface,
@@ -64,10 +64,18 @@ get_max_width :: proc() -> i32 {
   return total + 100
 }
 
-get_max_height :: proc() -> i32 {
+get_max_height :: proc(display: ^xlib.Display) -> i32 {
   max_height :i32 = 0
   count_active :i32 = 0
+  unmapped := xlib.WindowMapState.IsUnmapped
+  unviewable := xlib.WindowMapState.IsUnviewable
   for v in &cache {
+    attrs, attrs_ok := get_attributes(display, v.window_id).?
+    if attrs_ok {
+      if attrs.map_state == unviewable || attrs.map_state == unmapped {
+        continue
+      }
+    }
     if v.is_active {
       max_height = max(max_height, v.text_height)
       count_active += 1
@@ -98,7 +106,7 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
   white : sdl2.Color = {100, 200, 100, 255}
 
   font: ^ttf.Font
-  get_matching_font("abc123", &font)
+  get_matching_font("abc123", 7, &font)
   if font == nil {
     fmt.panicf("Got a nil font in init_digits")
   }
@@ -356,7 +364,8 @@ text_set_cached :: proc(display: ^xlib.Display,
   }
 
   font: ^ttf.Font
-  bytes_processed, bytes_processed_ok := get_matching_font(active_window, &font).?
+  window_name_len := cast(i32)libc.strlen(cast(cstring)active_window)
+  bytes_processed, bytes_processed_ok := get_matching_font(active_window, window_name_len, &font).?
   if font == nil {
     fmt.panicf("Font was nil")
   }
@@ -669,9 +678,9 @@ check_text_renders :: proc(text: cstring, ttf_font: ^ttf.Font) -> i32 {
   return bytes_processed
 }
 
-get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) -> Maybe(i32) {
+get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) -> Maybe(i32) {
   p: ^c.uchar = cast(^c.uchar)text
-  text_len := cast(i32)libc.strlen(cast(cstring)p)
+  text_len := window_len
 
   // Early check to see if the text can be rendered by any cached fonts
   for f in font_cache {
@@ -680,6 +689,9 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) -> Maybe(i32) {
       fmt.println("found matching font before running get_matching_font")
       ttf_font^ = f.font
       return bytes_processed
+    }
+    else {
+      fmt.println("didn't fully match font")
     }
   }
 
@@ -712,6 +724,11 @@ get_matching_font :: proc(text: cstring, ttf_font: ^^ttf.Font) -> Maybe(i32) {
 
   defer FcObjectSetDestroy(os)
   font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &fc_result)
+  fonts_to_check : [^]^FcPattern = font_patterns.fonts
+  //for i in 0..<font_patterns.nfont {
+    //font_pat := FcFontRenderPrepare(nil, pat, fonts_to_check[i])
+//
+  //}
   defer FcFontSetDestroy(font_patterns)
 
   if font_patterns == nil || font_patterns.nfont == 0 {
@@ -942,7 +959,7 @@ main :: proc() {
             if !selector_showing {
               selector_showing = true
               xlib.MapWindow(display, selector_win)
-              sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
+              sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height(display))
             }
             else {
               xlib.UnmapWindow(display, selector_win)
@@ -982,7 +999,7 @@ main :: proc() {
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
           if selector_showing {
-            sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
+            sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height(display))
           }
           if window_id != 0 {
             text_set_cached(display, renderer, selector_renderer, window_id)
@@ -1000,7 +1017,7 @@ main :: proc() {
             window_id := current_event.xproperty.window
             if window_id != 0 {
               if selector_showing {
-                sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
+                sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height(display))
               }
               text_set_cached(display, renderer, selector_renderer, window_id)
             }
@@ -1019,7 +1036,15 @@ main :: proc() {
         offset :i32 = 0
         sdl2.SetRenderDrawColor(selector_renderer, 23, 0, 60, 255)
         sdl2.RenderClear(selector_renderer)
+        unmapped := xlib.WindowMapState.IsUnmapped
+        unviewable := xlib.WindowMapState.IsUnviewable
         for v in &cache {
+          attrs, attrs_ok := get_attributes(display, v.window_id).?
+          if attrs_ok {
+            if attrs.map_state == unviewable || attrs.map_state == unmapped {
+              continue
+            }
+          }
           if v.is_active {
             rect : sdl2.Rect = {0, offset, v.text_width, v.text_height}
             sdl2.RenderCopy(selector_renderer, v.window_selector_cache.texture, nil, &rect)
