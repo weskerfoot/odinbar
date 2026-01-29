@@ -358,6 +358,10 @@ text_set_cached :: proc(display: ^xlib.Display,
   font: ^ttf.Font
   window_name_len := cast(i32)libc.strlen(cast(cstring)active_window)
   bytes_processed, bytes_processed_ok := get_matching_font(active_window, window_name_len, &font).?
+  if bytes_processed != window_name_len {
+    fmt.println("Couldn't match entire string to font!")
+    fmt.println(window_name_len, bytes_processed)
+  }
   if font == nil {
     fmt.panicf("Font was nil")
   }
@@ -645,6 +649,57 @@ family_cst : cstring = "family"
 style_cst : cstring = "style"
 file_cst : cstring = "file"
 
+get_emoji_font :: proc(text: cstring, offset: i64, window_len: i32, ttf_font: ^^ttf.Font) -> Maybe(i32) {
+  p: ^c.uchar = cast(^c.uchar)text
+  p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + offset))
+  text_len := window_len
+
+  ucs4: c.uint
+  pat := FcNameParse(cast(^c.char)preferred_font)
+  charset := FcCharSetCreate()
+  defer FcCharSetDestroy(charset)
+  fc_result : FcResult
+
+  for p^ != 0 {
+    char_len : c.int = FcUtf8ToUcs4(p, &ucs4, text_len)
+    if char_len <= 0 {
+      break
+    }
+    FcCharSetAddChar(charset, ucs4)
+    text_len -= char_len
+    p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + cast(i64)char_len))
+  }
+
+  FcPatternAddCharSet(pat, cast(^u8)charset_cst, charset)
+
+  FcConfigSubstitute(nil, pat, FcMatchKind.FcMatchPattern)
+  FcDefaultSubstitute(pat)
+  defer if pat != nil { FcPatternDestroy(pat) }
+  fs := FcFontSetCreate()
+  defer if fs != nil { FcFontSetDestroy(fs) }
+
+  os := FcObjectSetBuild(cast(^u8)family_cst,
+                         style_cst,
+                         file_cst,
+                         nil)
+
+  defer if os != nil { FcObjectSetDestroy(os) }
+  font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &fc_result)
+  fonts_to_check : [^]^FcPattern = font_patterns.fonts
+
+  // This loop leaks a lot of memory!
+  for i in 0..<font_patterns.nfont {
+    font_pat := FcFontRenderPrepare(nil, pat, fonts_to_check[i])
+    v: FcValue
+    font: ^FcPattern = FcPatternFilter(font_pat, os)
+    FcPatternGet(font, cast(^u8)file_cst, 0, &v)
+    found_font := cast(cstring)v.u.f
+    fmt.println(found_font)
+  }
+
+  defer if font_patterns != nil { FcFontSetDestroy(font_patterns) }
+  return 0
+}
 
 check_text_renders :: proc(text: cstring, ttf_font: ^ttf.Font) -> i32 {
   ucs4: c.uint
@@ -683,7 +738,7 @@ get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) 
       return bytes_processed
     }
     else {
-      fmt.println("didn't fully match font")
+      fmt.println("didn't find a font that matched all characters before actually using fc")
     }
   }
 
@@ -707,21 +762,19 @@ get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) 
 
   FcConfigSubstitute(nil, pat, FcMatchKind.FcMatchPattern)
   FcDefaultSubstitute(pat)
-  defer FcPatternDestroy(pat)
+  defer if pat != nil { FcPatternDestroy(pat) }
   fs := FcFontSetCreate()
+  defer if fs != nil { FcFontSetDestroy(fs) }
+
   os := FcObjectSetBuild(cast(^u8)family_cst,
                          style_cst,
                          file_cst,
                          nil)
 
-  defer FcObjectSetDestroy(os)
+  defer if os != nil { FcObjectSetDestroy(os) }
   font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &fc_result)
   fonts_to_check : [^]^FcPattern = font_patterns.fonts
-  //for i in 0..<font_patterns.nfont {
-    //font_pat := FcFontRenderPrepare(nil, pat, fonts_to_check[i])
-//
-  //}
-  defer FcFontSetDestroy(font_patterns)
+  defer if font_patterns != nil { FcFontSetDestroy(font_patterns) }
 
   if font_patterns == nil || font_patterns.nfont == 0 {
     fmt.panicf("No fonts configured on your system\n")
@@ -759,11 +812,10 @@ get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) 
           append(&font_cache, FontCache{found_font_st, ttf_font^})
         }
         else {
-          defer delete(found_font_st)
+          delete(found_font_st)
         }
-        defer FcPatternDestroy(font)
+        FcPatternDestroy(font)
       }
-      defer FcFontSetDestroy(fs)
     }
   }
   else {
@@ -1043,17 +1095,25 @@ main :: proc() {
       active_window, ok_window := get_active_window(display).?
 
       if ok_window {
-        cached_texture, ok_text := text_get_cached(display, renderer, selector_renderer, active_window).?
-
-        if ok_text && cached_texture.icon_status_cache.texture != nil {
-          rect : sdl2.Rect = {32, 5, cached_texture.text_width, cached_texture.text_height}
-          icon_rect : sdl2.Rect = {0, 0, 32, 32}
-          sdl2.RenderCopy(renderer, cached_texture.window_status_cache.texture, nil, &rect)
-          sdl2.RenderCopy(renderer, cached_texture.icon_status_cache.texture, nil, &icon_rect)
+        active_cached_texture, active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
+        offset :i32 = 0
+        for v in &cache {
+          if v.is_active && v.icon_status_cache.texture != nil && v.window_id != active_window {
+            icon_rect : sdl2.Rect = {offset, 0, 32, 32}
+            sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
+            offset += 32
+          }
         }
-        else if ok_text {
-          rect : sdl2.Rect = {0, 5, cached_texture.text_width, cached_texture.text_height}
-          sdl2.RenderCopy(renderer, cached_texture.window_status_cache.texture, nil, &rect)
+
+        if active_ok && active_cached_texture.icon_status_cache.texture != nil {
+          rect : sdl2.Rect = {offset+32, 5, active_cached_texture.text_width, active_cached_texture.text_height}
+          icon_rect : sdl2.Rect = {offset, 0, 32, 32}
+          sdl2.RenderCopy(renderer, active_cached_texture.window_status_cache.texture, nil, &rect)
+          sdl2.RenderCopy(renderer, active_cached_texture.icon_status_cache.texture, nil, &icon_rect)
+        }
+        else if active_ok {
+          rect : sdl2.Rect = {offset, 5, active_cached_texture.text_width, active_cached_texture.text_height}
+          sdl2.RenderCopy(renderer, active_cached_texture.window_status_cache.texture, nil, &rect)
         }
         else {
           fmt.println("Failed to get any text to render!")
