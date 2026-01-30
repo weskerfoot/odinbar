@@ -428,8 +428,6 @@ cache_active_windows :: proc(display: ^xlib.Display,
     )
   windows := cast([^]xlib.XID)data
 
-  fmt.println(nitems_return)
-
   for i in 0..<nitems_return { // lol it's not 32 even though xlib says it is
     window_text_props, text_props_ok := get_window_name(display, windows[i]).?
     if text_props_ok {
@@ -437,6 +435,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
       text_set_cached(display, renderer, selector_renderer, windows[i])
     }
   }
+  xlib.Free(data)
 }
 
 get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(xlib.XTextProperty) {
@@ -1066,25 +1065,32 @@ main :: proc() {
           if selector_showing {
             sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
           }
+          attrs, attrs_ok := get_attributes(display, window_id).?
           if window_id != 0 { // FIXME check override_redirect instead?
-            text_set_cached(display, renderer, selector_renderer, window_id)
-
-            xlib.SelectInput(display,
-                             window_id,
-                             {xlib.EventMaskBits.PropertyChange,
-                              xlib.EventMaskBits.StructureNotify,
-                              xlib.EventMaskBits.SubstructureNotify,})
+            if attrs_ok {
+              if attrs.override_redirect == false {
+                text_set_cached(display, renderer, selector_renderer, window_id)
+                xlib.SelectInput(display,
+                                 window_id,
+                                 {xlib.EventMaskBits.PropertyChange,
+                                  xlib.EventMaskBits.StructureNotify,
+                                  xlib.EventMaskBits.SubstructureNotify,})
+              }
+            }
           }
         }
         if (current_event.type == xlib.EventType.PropertyNotify) {
           if (current_event.xproperty.atom == xlib.InternAtom(display, "_NET_WM_NAME", false) ||
               current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
             window_id := current_event.xproperty.window
+            attrs, attrs_ok := get_attributes(display, window_id).?
             if window_id != 0 {
               if selector_showing {
                 sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
               }
-              text_set_cached(display, renderer, selector_renderer, window_id)
+              if attrs_ok && attrs.override_redirect == false {
+                text_set_cached(display, renderer, selector_renderer, window_id)
+              }
             }
           }
         }
