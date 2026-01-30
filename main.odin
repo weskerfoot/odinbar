@@ -253,38 +253,6 @@ get_attributes :: proc(display: ^xlib.Display,
   return attrs
 }
 
-cache_active_windows :: proc(display: ^xlib.Display,
-                             root_window: xlib.XID,
-                             renderer: ^sdl2.Renderer,
-                             selector_renderer: ^sdl2.Renderer) {
-  root_ret : xlib.XID
-  parent_ret : xlib.XID
-  children_ret : [^]xlib.XID // array of pointers to windows
-  n_children_ret : u32
-  xlib.QueryTree(display, root_window, &root_ret, &parent_ret, &children_ret, &n_children_ret)
-
-  current_window : xlib.XID
-
-  defer xlib.Free(children_ret)
-
-  unviewable := xlib.WindowMapState.IsUnviewable
-  unmapped := xlib.WindowMapState.IsUnmapped
-
-  for i in 0..<n_children_ret {
-    current_window = children_ret[i]
-    if current_window == root_window {
-      continue
-    }
-    attrs, attrs_ok := get_attributes(display, current_window).?
-    if attrs_ok {
-      if attrs.map_state == unviewable || attrs.map_state == unmapped {
-        continue
-      }
-      text_set_cached(display, renderer, selector_renderer, current_window)
-    }
-  }
-}
-
 text_get_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
                         selector_renderer: ^sdl2.Renderer,
@@ -424,6 +392,51 @@ free_cache :: proc() {
     }
   }
   clear(&cache)
+}
+
+cache_active_windows :: proc(display: ^xlib.Display,
+                             root_window: xlib.XID,
+                             renderer: ^sdl2.Renderer,
+                             selector_renderer: ^sdl2.Renderer) {
+  root := xlib.DefaultRootWindow(display)
+
+  net_client_list_atom := xlib.InternAtom(display, "_NET_CLIENT_LIST", false)
+
+  size_type_return : xlib.Atom
+  size_format_return : i32
+  size_nitems_return, bytes_left : uint = 0, 0
+  size_data : rawptr
+
+  type_return : xlib.Atom
+  format_return : i32
+  nitems_return, icon_data_bytes_left : uint = 0, 0
+  data : rawptr
+
+  status := xlib.GetWindowProperty(
+        display,
+        root,
+        net_client_list_atom,
+        0,
+        -1,
+        false,
+        XA_WINDOW,
+        &type_return,
+        &format_return,
+        &nitems_return,
+        &bytes_left,
+        &data
+    )
+  windows := cast([^]xlib.XID)data
+
+  fmt.println(nitems_return)
+
+  for i in 0..<nitems_return { // lol it's not 32 even though xlib says it is
+    window_text_props, text_props_ok := get_window_name(display, windows[i]).?
+    if text_props_ok {
+      fmt.println(cast(cstring)window_text_props.value)
+      text_set_cached(display, renderer, selector_renderer, windows[i])
+    }
+  }
 }
 
 get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(xlib.XTextProperty) {
@@ -1042,17 +1055,25 @@ main :: proc() {
         }
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
+          root_ret : xlib.XID
+          parent_ret : xlib.XID
+          children_ret : [^]xlib.XID // array of pointers to windows
+          n_children_ret : u32
+          xlib.QueryTree(display, window_id, &root_ret, &parent_ret, &children_ret, &n_children_ret)
+          defer xlib.Free(children_ret)
+
+
           if selector_showing {
             sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
           }
-          if window_id != 0 {
+          if window_id != 0 { // FIXME check override_redirect instead?
             text_set_cached(display, renderer, selector_renderer, window_id)
 
             xlib.SelectInput(display,
                              window_id,
                              {xlib.EventMaskBits.PropertyChange,
                               xlib.EventMaskBits.StructureNotify,
-                              xlib.EventMaskBits.SubstructureNotify})
+                              xlib.EventMaskBits.SubstructureNotify,})
           }
         }
         if (current_event.type == xlib.EventType.PropertyNotify) {
@@ -1097,6 +1118,8 @@ main :: proc() {
       if ok_window {
         active_cached_texture, active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
         offset :i32 = 0
+
+        // Show other icons
         for v in &cache {
           if v.is_active && v.icon_status_cache.texture != nil && v.window_id != active_window {
             icon_rect : sdl2.Rect = {offset, 0, 32, 32}
