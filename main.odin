@@ -435,6 +435,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
 
   for i in 0..<nitems_return { // lol it's not 32 even though xlib says it is
     window_text_props, text_props_ok := get_window_name(display, windows[i]).?
+    defer xlib.Free(window_text_props.value)
     if text_props_ok {
       fmt.println(cast(cstring)window_text_props.value)
       text_set_cached(display, renderer, selector_renderer, windows[i])
