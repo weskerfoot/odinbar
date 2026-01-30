@@ -412,7 +412,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
   nitems_return, icon_data_bytes_left : uint = 0, 0
   data : rawptr
 
-  status := xlib.GetWindowProperty(
+  result := xlib.GetWindowProperty(
         display,
         root,
         net_client_list_atom,
@@ -426,7 +426,12 @@ cache_active_windows :: proc(display: ^xlib.Display,
         &bytes_left,
         &data
     )
+  if result != cast(i32)xlib.Status.Success {
+    fmt.println("Could not access EWMH property _NET_CLIENT_LIST, can't get active windows")
+    return
+  }
   windows := cast([^]xlib.XID)data
+  defer xlib.Free(data)
 
   for i in 0..<nitems_return { // lol it's not 32 even though xlib says it is
     window_text_props, text_props_ok := get_window_name(display, windows[i]).?
@@ -435,7 +440,6 @@ cache_active_windows :: proc(display: ^xlib.Display,
       text_set_cached(display, renderer, selector_renderer, windows[i])
     }
   }
-  xlib.Free(data)
 }
 
 get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(xlib.XTextProperty) {
