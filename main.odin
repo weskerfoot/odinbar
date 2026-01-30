@@ -278,7 +278,7 @@ text_set_cached :: proc(display: ^xlib.Display,
     fmt.println("got window_id == 0 in text_set_cached")
     return nil
   }
-  if len(cache) > 25 {
+  if len(cache) > 250 {
     free_cache()
   }
 
@@ -737,6 +737,7 @@ check_text_renders :: proc(text: cstring, ttf_font: ^ttf.Font) -> i32 {
       break
     }
     text_len -= char_len
+    // Yes this is ugly, there might be a nicer way with multi-pointers
     p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + cast(i64)char_len))
   }
   return bytes_processed
@@ -1033,7 +1034,7 @@ main :: proc() {
           }
       }
 
-      if xlib.Pending(display) > 0 {
+      for xlib.Pending(display) > 0 {
         xlib.NextEvent(display, &current_event)
         if (current_event.type == xlib.EventType.DestroyNotify) {
           for &v in cache {
