@@ -1126,20 +1126,19 @@ main :: proc() {
       sdl2.SetRenderDrawColor(renderer, 0, 0, 0, 255)
       sdl2.RenderClear(renderer)
       active_window, ok_window := get_active_window(display).?
+      offset :i32 = 0
+
+      // Show other icons
+      for v in &cache {
+        if v.is_active && v.icon_status_cache.texture != nil && v.window_id != active_window {
+          icon_rect : sdl2.Rect = {offset, 0, 32, 32}
+          sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
+          offset += 32
+        }
+      }
 
       if ok_window {
         active_cached_texture, active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
-        offset :i32 = 0
-
-        // Show other icons
-        for v in &cache {
-          if v.is_active && v.icon_status_cache.texture != nil && v.window_id != active_window {
-            icon_rect : sdl2.Rect = {offset, 0, 32, 32}
-            sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
-            offset += 32
-          }
-        }
-
         if active_ok && active_cached_texture.icon_status_cache.texture != nil {
           rect : sdl2.Rect = {offset+32, 5, active_cached_texture.text_width, active_cached_texture.text_height}
           icon_rect : sdl2.Rect = {offset, 0, 32, 32}
