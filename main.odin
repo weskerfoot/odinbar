@@ -509,10 +509,19 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
     return nil
   }
 
-  icon_path := strings.concatenate({"/usr/share/icons/hicolor/128x128/apps/", class_name_st, ".png"})
-  icon_path_cst := strings.clone_to_cstring(icon_path)
+  icon_path_hicolor := strings.concatenate({"/usr/share/icons/hicolor/32x32/apps/", class_name_st, ".png"})
+  icon_path_locolor := strings.concatenate({"/usr/share/icons/locolor/32x32/apps/", class_name_st, ".png"})
+
+  icon_path_cst :cstring
+  if os.is_file(icon_path_hicolor) {
+    icon_path_cst = strings.clone_to_cstring(icon_path_hicolor)
+  }
+  else {
+    icon_path_cst = strings.clone_to_cstring(icon_path_locolor)
+  }
   defer delete(icon_path_cst)
-  defer delete(icon_path)
+  defer delete(icon_path_hicolor)
+  defer delete(icon_path_locolor)
   icon_rwops := sdl2.RWFromFile(icon_path_cst, "rb")
   result := image.LoadPNG_RW(icon_rwops)
   return SDLIcon{result, nil, icon_rwops}
