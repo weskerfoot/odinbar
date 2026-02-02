@@ -436,6 +436,64 @@ cache_active_windows :: proc(display: ^xlib.Display,
   }
 }
 
+reconcile_client_list :: proc(display: ^xlib.Display,
+                              updated_window: xlib.XID,
+                              renderer: ^sdl2.Renderer,
+                              selector_renderer: ^sdl2.Renderer) {
+  root := xlib.DefaultRootWindow(display)
+
+  net_client_list_atom := xlib.InternAtom(display, "_NET_CLIENT_LIST_STACKING", false)
+
+  size_type_return : xlib.Atom
+  size_format_return : i32
+  size_nitems_return, bytes_left : uint = 0, 0
+  size_data : rawptr
+
+  type_return : xlib.Atom
+  format_return : i32
+  nitems_return, icon_data_bytes_left : uint = 0, 0
+  data : rawptr
+
+  result := xlib.GetWindowProperty(
+        display,
+        root,
+        net_client_list_atom,
+        0,
+        -1,
+        false,
+        XA_WINDOW,
+        &type_return,
+        &format_return,
+        &nitems_return,
+        &bytes_left,
+        &data
+    )
+  if result != cast(i32)xlib.Status.Success {
+    fmt.println("Could not access EWMH property _NET_CLIENT_LIST, can't get active windows")
+    return
+  }
+  windows := cast([^]xlib.XID)data
+  defer xlib.Free(data)
+
+  found_window := false
+  for i in 0..<nitems_return { // lol it's not 32 even though xlib says it is
+    if windows[i] == updated_window {
+      found_window = true
+      break
+    }
+  }
+  if !found_window {
+    for &v in cache {
+      if v.window_id == updated_window && v.is_active {
+        free_cache_record(v)
+        v.is_active = false
+        break
+      }
+    }
+  }
+}
+
+
 get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(xlib.XTextProperty) {
   props : xlib.XTextProperty
   active_window_atom := xlib.InternAtom(display, "_NET_WM_NAME", false)
@@ -1047,6 +1105,10 @@ main :: proc() {
               v.is_active = false
             }
           }
+        }
+        if (current_event.type == xlib.EventType.UnmapNotify) {
+          updated_window := current_event.xdestroywindow.window
+          reconcile_client_list(display, updated_window, renderer, selector_renderer)
         }
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
