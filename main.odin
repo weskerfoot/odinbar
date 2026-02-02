@@ -79,6 +79,23 @@ get_max_height :: proc() -> i32 {
 
 cache: #soa[dynamic]TextCache
 
+free_cache_record :: proc(v: TextCache) -> TextCache {
+  sdl2.FreeSurface(v.window_status_cache.surface)
+  sdl2.FreeSurface(v.icon_status_cache.surface)
+  sdl2.FreeSurface(v.window_selector_cache.surface)
+  sdl2.DestroyTexture(v.window_status_cache.texture)
+  sdl2.DestroyTexture(v.icon_status_cache.texture)
+  sdl2.DestroyTexture(v.window_selector_cache.texture)
+  delete(v.window_name)
+  if v.icon_status_cache.rwops != nil {
+    sdl2.FreeRW(v.icon_status_cache.rwops)
+  }
+  if v.icon_status_cache.image_buf != nil {
+    delete(v.icon_status_cache.image_buf)
+  }
+  return v
+}
+
 FontCache :: struct {
   font_path: string,
   font: ^ttf.Font
@@ -289,19 +306,7 @@ text_set_cached :: proc(display: ^xlib.Display,
   for &v in cache {
     if v.window_id == window_id && v.is_active {
       found_existing_window = i
-      sdl2.FreeSurface(v.window_status_cache.surface)
-      sdl2.DestroyTexture(v.window_status_cache.texture)
-      sdl2.FreeSurface(v.icon_status_cache.surface)
-      sdl2.DestroyTexture(v.icon_status_cache.texture)
-      sdl2.FreeSurface(v.window_selector_cache.surface)
-      sdl2.DestroyTexture(v.window_selector_cache.texture)
-      delete(v.window_name)
-      if v.icon_status_cache.rwops != nil {
-        sdl2.FreeRW(v.icon_status_cache.rwops)
-      }
-      if v.icon_status_cache.image_buf != nil {
-        delete(v.icon_status_cache.image_buf)
-      }
+      free_cache_record(v)
       v.is_active = false
       break
     }
@@ -375,20 +380,7 @@ text_set_cached :: proc(display: ^xlib.Display,
 free_cache :: proc() {
   for &v in cache {
     if v.is_active {
-      // TODO make separate proc to free RenderCache structs
-      sdl2.FreeSurface(v.window_status_cache.surface)
-      sdl2.DestroyTexture(v.window_status_cache.texture)
-      sdl2.FreeSurface(v.icon_status_cache.surface)
-      sdl2.DestroyTexture(v.icon_status_cache.texture)
-      sdl2.FreeSurface(v.window_selector_cache.surface)
-      sdl2.DestroyTexture(v.window_selector_cache.texture)
-      delete(v.window_name)
-      if v.icon_status_cache.rwops != nil {
-        sdl2.FreeRW(v.icon_status_cache.rwops)
-      }
-      if v.icon_status_cache.image_buf != nil {
-        delete(v.icon_status_cache.image_buf)
-      }
+      free_cache_record(v)
       v.is_active = false
     }
   }
@@ -401,7 +393,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
                              selector_renderer: ^sdl2.Renderer) {
   root := xlib.DefaultRootWindow(display)
 
-  net_client_list_atom := xlib.InternAtom(display, "_NET_CLIENT_LIST", false)
+  net_client_list_atom := xlib.InternAtom(display, "_NET_CLIENT_LIST_STACKING", false)
 
   size_type_return : xlib.Atom
   size_format_return : i32
@@ -1051,19 +1043,7 @@ main :: proc() {
             if v.is_active && v.window_id == current_event.xdestroywindow.window {
               // TODO, function for just free-ing one TextCache record
               fmt.println("Freeing window from cache")
-              sdl2.FreeSurface(v.window_status_cache.surface)
-              sdl2.FreeSurface(v.icon_status_cache.surface)
-              sdl2.FreeSurface(v.window_selector_cache.surface)
-              sdl2.DestroyTexture(v.window_status_cache.texture)
-              sdl2.DestroyTexture(v.icon_status_cache.texture)
-              sdl2.DestroyTexture(v.window_selector_cache.texture)
-              delete(v.window_name)
-              if v.icon_status_cache.rwops != nil {
-                sdl2.FreeRW(v.icon_status_cache.rwops)
-              }
-              if v.icon_status_cache.image_buf != nil {
-                delete(v.icon_status_cache.image_buf)
-              }
+              free_cache_record(v)
               v.is_active = false
             }
           }
@@ -1076,7 +1056,6 @@ main :: proc() {
           n_children_ret : u32
           xlib.QueryTree(display, window_id, &root_ret, &parent_ret, &children_ret, &n_children_ret)
           defer xlib.Free(children_ret)
-
 
           if selector_showing {
             sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
