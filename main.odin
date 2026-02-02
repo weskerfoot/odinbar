@@ -79,7 +79,7 @@ get_max_height :: proc() -> i32 {
 
 cache: #soa[dynamic]TextCache
 
-free_cache_record :: proc(v: TextCache) -> TextCache {
+free_cache_record :: proc(v: TextCache) {
   sdl2.FreeSurface(v.window_status_cache.surface)
   sdl2.FreeSurface(v.icon_status_cache.surface)
   sdl2.FreeSurface(v.window_selector_cache.surface)
@@ -93,7 +93,6 @@ free_cache_record :: proc(v: TextCache) -> TextCache {
   if v.icon_status_cache.image_buf != nil {
     delete(v.icon_status_cache.image_buf)
   }
-  return v
 }
 
 FontCache :: struct {
