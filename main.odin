@@ -966,6 +966,34 @@ set_window_props :: proc(win: xlib.Window,
   }
 }
 
+switch_to_window :: proc(display: ^xlib.Display, window_id: xlib.XID) {
+  ev: xlib.XClientMessageEvent
+  net_active_window: xlib.Atom = xlib.InternAtom(display, "_NET_ACTIVE_WINDOW", false)
+  screen := xlib.DefaultScreen(display)
+  root := xlib.RootWindow(display, screen)
+
+  if net_active_window == xlib.None {
+    fmt.panicf("EWMH not supported")
+  }
+
+  ev.type = xlib.EventType.ClientMessage
+  ev.send_event = true
+  ev.window = window_id
+  ev.message_type = net_active_window
+  ev.format = 32
+  ev.data.l[0] = 1
+  ev.data.l[1] = xlib.CurrentTime
+  ev.data.l[2] = 0
+
+  result := xlib.SendEvent(display, root, false, {xlib.EventMaskBits.SubstructureNotify, xlib.EventMaskBits.SubstructureRedirect}, cast(^xlib.XEvent)&ev)
+  if result != xlib.Status.Success {
+    fmt.println(result)
+  }
+  else {
+    xlib.Flush(display)
+  }
+}
+
 main :: proc() {
   display := xlib.OpenDisplay(nil)
   displayHeight := xlib.DisplayHeight(display, 0)
@@ -1069,6 +1097,10 @@ main :: proc() {
 
   selector_showing :bool = false
 
+  x_pos, y_pos: i32
+
+  should_switch_to_window : Maybe(xlib.XID) = nil
+
   for running {
       for sdl2.PollEvent(&event) != false {
           if event.type == sdl2.EventType.QUIT {
@@ -1077,14 +1109,21 @@ main :: proc() {
           else if event.type == sdl2.EventType.MOUSEBUTTONDOWN {
             fmt.println("button down")
             fmt.println(event)
-            if !selector_showing {
-              selector_showing = true
-              xlib.MapWindow(display, selector_win)
-              sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
+            switch_window, should_switch_window := should_switch_to_window.?
+            if !should_switch_window {
+              if !selector_showing {
+                selector_showing = true
+                xlib.MapWindow(display, selector_win)
+                sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
+              }
+              else {
+                xlib.UnmapWindow(display, selector_win)
+                selector_showing = false
+              }
             }
-            else {
-              xlib.UnmapWindow(display, selector_win)
-              selector_showing = false
+            if should_switch_window {
+              switch_to_window(display, switch_window)
+              should_switch_to_window = nil
             }
           }
           else if event.type == sdl2.EventType.MOUSEBUTTONUP {
@@ -1178,11 +1217,17 @@ main :: proc() {
       active_window, ok_window := get_active_window(display).?
       offset :i32 = 0
 
+      sdl2.GetMouseState(&x_pos, &y_pos)
       // Show other icons
       for v in &cache {
         if v.is_active && v.icon_status_cache.texture != nil && v.window_id != active_window {
-          icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
-          sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
+          if x_pos > offset && x_pos <= (offset+icon_size) {
+            should_switch_to_window = v.window_id
+          }
+          else {
+            icon_rect : sdl2.Rect = {offset, 0, icon_size-1, icon_size-1}
+            sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
+          }
           offset += icon_size
         }
       }
@@ -1191,9 +1236,14 @@ main :: proc() {
         active_cached_texture, active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
         if active_ok && active_cached_texture.icon_status_cache.texture != nil {
           rect : sdl2.Rect = {offset+icon_size, 5, active_cached_texture.text_width, active_cached_texture.text_height}
-          icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
+          if x_pos > offset && x_pos <= (offset+icon_size) {
+            should_switch_to_window = active_window
+          }
+          else {
+            icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
+            sdl2.RenderCopy(renderer, active_cached_texture.icon_status_cache.texture, nil, &icon_rect)
+          }
           sdl2.RenderCopy(renderer, active_cached_texture.window_status_cache.texture, nil, &rect)
-          sdl2.RenderCopy(renderer, active_cached_texture.icon_status_cache.texture, nil, &icon_rect)
         }
         else if active_ok {
           rect : sdl2.Rect = {offset, 5, active_cached_texture.text_width, active_cached_texture.text_height}
