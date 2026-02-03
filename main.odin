@@ -20,7 +20,7 @@ import "vendor:x11/xlib"
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
-icon_size :i32 = 32 // Note that it loads 32x32 icons by default so this matches that
+icon_size :i32 = 31 // Note that it loads 32x32 icons by default so this matches that
 preferred_font: cstring = "Noto Sans"
 
 RenderCache :: struct {
@@ -392,7 +392,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
                              selector_renderer: ^sdl2.Renderer) {
   root := xlib.DefaultRootWindow(display)
 
-  net_client_list_atom := xlib.InternAtom(display, "_NET_CLIENT_LIST_STACKING", false)
+  net_client_list_atom := xlib.InternAtom(display, "_NET_CLIENT_LIST", false)
 
   size_type_return : xlib.Atom
   size_format_return : i32
@@ -1109,8 +1109,11 @@ main :: proc() {
           else if event.type == sdl2.EventType.MOUSEBUTTONDOWN {
             fmt.println("button down")
             fmt.println(event)
-            switch_window, should_switch_window := should_switch_to_window.?
-            if !should_switch_window {
+            window_to_switch_to, switch_window_ok := should_switch_to_window.?
+
+            // Check if we clicked on an icon or the selector
+            // This would work better as an enum of possible click states I think
+            if !switch_window_ok {
               if !selector_showing {
                 selector_showing = true
                 xlib.MapWindow(display, selector_win)
@@ -1121,10 +1124,11 @@ main :: proc() {
                 selector_showing = false
               }
             }
-            if should_switch_window {
-              switch_to_window(display, switch_window)
-              should_switch_to_window = nil
+            if switch_window_ok {
+              fmt.println("trying to switch window")
+              switch_to_window(display, window_to_switch_to)
             }
+            should_switch_to_window = nil
           }
           else if event.type == sdl2.EventType.MOUSEBUTTONUP {
             fmt.println("button up")
@@ -1219,13 +1223,15 @@ main :: proc() {
 
       sdl2.GetMouseState(&x_pos, &y_pos)
       // Show other icons
+      should_switch_to_window = nil
       for v in &cache {
         if v.is_active && v.icon_status_cache.texture != nil && v.window_id != active_window {
+          icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
           if x_pos > offset && x_pos <= (offset+icon_size) {
             should_switch_to_window = v.window_id
+            sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
           }
           else {
-            icon_rect : sdl2.Rect = {offset, 0, icon_size-1, icon_size-1}
             sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
           }
           offset += icon_size
@@ -1236,11 +1242,12 @@ main :: proc() {
         active_cached_texture, active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
         if active_ok && active_cached_texture.icon_status_cache.texture != nil {
           rect : sdl2.Rect = {offset+icon_size, 5, active_cached_texture.text_width, active_cached_texture.text_height}
+          icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
           if x_pos > offset && x_pos <= (offset+icon_size) {
             should_switch_to_window = active_window
+            sdl2.RenderCopy(renderer, active_cached_texture.icon_status_cache.texture, nil, &icon_rect)
           }
           else {
-            icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
             sdl2.RenderCopy(renderer, active_cached_texture.icon_status_cache.texture, nil, &icon_rect)
           }
           sdl2.RenderCopy(renderer, active_cached_texture.window_status_cache.texture, nil, &rect)
