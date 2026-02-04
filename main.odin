@@ -1113,11 +1113,18 @@ main :: proc() {
   x_pos, y_pos: i32
 
   should_switch_to_window : Maybe(xlib.XID) = nil
+  is_mouse_focused :bool = false
 
   for running {
       for sdl2.PollEvent(&event) != false {
           if event.type == sdl2.EventType.QUIT {
               running = false
+          }
+          else if event.type == sdl2.EventType.WINDOWEVENT && event.window.event == sdl2.WindowEventID.LEAVE {
+            is_mouse_focused = false
+          }
+          else if event.type == sdl2.EventType.WINDOWEVENT && event.window.event == sdl2.WindowEventID.ENTER {
+            is_mouse_focused = true
           }
           else if event.type == sdl2.EventType.MOUSEBUTTONDOWN {
             fmt.println("button down")
@@ -1241,7 +1248,7 @@ main :: proc() {
           icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
           border_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
           border_rect_inner : sdl2.Rect = {offset+border_width, border_width, icon_size-(border_width*2), icon_size-(border_width*2)}
-          if x_pos > offset && x_pos <= (offset+icon_size) {
+          if x_pos > offset && x_pos <= (offset+icon_size) && is_mouse_focused {
             should_switch_to_window = v.window_id
             sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 90)
             sdl2.RenderFillRect(renderer, &border_rect)
