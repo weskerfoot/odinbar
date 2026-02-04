@@ -559,22 +559,36 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
     return nil
   }
 
+  icon_path_hicolor_scalable := strings.concatenate({"/usr/share/icons/hicolor/scalable/apps/", class_name_st, ".svg"})
   icon_path_hicolor := strings.concatenate({"/usr/share/icons/hicolor/32x32/apps/", class_name_st, ".png"})
   icon_path_locolor := strings.concatenate({"/usr/share/icons/locolor/32x32/apps/", class_name_st, ".png"})
 
   icon_path_cst :cstring
-  if os.is_file(icon_path_hicolor) {
-    icon_path_cst = strings.clone_to_cstring(icon_path_hicolor)
-  }
-  else {
-    icon_path_cst = strings.clone_to_cstring(icon_path_locolor)
-  }
+  icon_rwops :^sdl2.RWops
+  surface_result :^sdl2.Surface
   defer delete(icon_path_cst)
   defer delete(icon_path_hicolor)
   defer delete(icon_path_locolor)
-  icon_rwops := sdl2.RWFromFile(icon_path_cst, "rb")
-  result := image.LoadPNG_RW(icon_rwops)
-  return SDLIcon{result, nil, icon_rwops}
+  defer delete(icon_path_hicolor_scalable)
+  if os.is_file(icon_path_hicolor) {
+    icon_path_cst = strings.clone_to_cstring(icon_path_hicolor)
+    icon_rwops = sdl2.RWFromFile(icon_path_cst, "rb")
+    surface_result = image.LoadPNG_RW(icon_rwops)
+  }
+  else if os.is_file(icon_path_locolor) {
+    icon_path_cst = strings.clone_to_cstring(icon_path_locolor)
+    icon_rwops = sdl2.RWFromFile(icon_path_cst, "rb")
+    surface_result = image.LoadPNG_RW(icon_rwops)
+  }
+  else if os.is_file(icon_path_hicolor_scalable) {
+    icon_path_cst = strings.clone_to_cstring(icon_path_hicolor_scalable)
+    icon_rwops = sdl2.RWFromFile(icon_path_cst, "rb")
+    surface_result = image.LoadSVG_RW(icon_rwops)
+  }
+  else {
+    return nil
+  }
+  return SDLIcon{surface_result, nil, icon_rwops}
 }
 
 get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon) {
@@ -1219,7 +1233,7 @@ main :: proc() {
       offset :i32 = 0
 
       sdl2.GetMouseState(&x_pos, &y_pos)
-      // Show other icons
+      // Show icons
       should_switch_to_window = nil
       for v in &cache {
         if v.is_active && v.icon_status_cache.texture != nil {
