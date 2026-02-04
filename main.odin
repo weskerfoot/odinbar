@@ -1005,7 +1005,7 @@ main :: proc() {
   defer xlib.CloseDisplay(display)
   screen := xlib.DefaultScreen(display)
   screen_width := xlib.DisplayWidth(display, screen)
-  bar_height :u32 = 40
+  bar_height :u32 = 45
 
   // For expanding path to odinbar
   odinbar_wordexp :posix.wordexp_t
@@ -1140,8 +1140,6 @@ main :: proc() {
         if (current_event.type == xlib.EventType.DestroyNotify) {
           for &v in cache {
             if v.is_active && v.window_id == current_event.xdestroywindow.window {
-              // TODO, function for just free-ing one TextCache record
-              fmt.println("Freeing window from cache")
               free_cache_record(v)
               v.is_active = false
             }
@@ -1224,10 +1222,17 @@ main :: proc() {
       // Show other icons
       should_switch_to_window = nil
       for v in &cache {
-        if v.is_active && v.icon_status_cache.texture != nil && v.window_id != active_window {
+        if v.is_active && v.icon_status_cache.texture != nil {
+          border_width :i32 = 2
           icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
+          border_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
+          border_rect_inner : sdl2.Rect = {offset+border_width, border_width, icon_size-(border_width*2), icon_size-(border_width*2)}
           if x_pos > offset && x_pos <= (offset+icon_size) {
             should_switch_to_window = v.window_id
+            sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 90)
+            sdl2.RenderFillRect(renderer, &border_rect)
+            sdl2.SetRenderDrawColor(renderer, 0, 0, 0, 90)
+            sdl2.RenderFillRect(renderer, &border_rect_inner)
             sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
           }
           else {
@@ -1239,19 +1244,7 @@ main :: proc() {
 
       if ok_window {
         active_cached_texture, active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
-        if active_ok && active_cached_texture.icon_status_cache.texture != nil {
-          rect : sdl2.Rect = {offset+icon_size, 5, active_cached_texture.text_width, active_cached_texture.text_height}
-          icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
-          if x_pos > offset && x_pos <= (offset+icon_size) {
-            // This is the currently focused window
-            sdl2.RenderCopy(renderer, active_cached_texture.icon_status_cache.texture, nil, &icon_rect)
-          }
-          else {
-            sdl2.RenderCopy(renderer, active_cached_texture.icon_status_cache.texture, nil, &icon_rect)
-          }
-          sdl2.RenderCopy(renderer, active_cached_texture.window_status_cache.texture, nil, &rect)
-        }
-        else if active_ok {
+        if active_ok {
           rect : sdl2.Rect = {offset, 5, active_cached_texture.text_width, active_cached_texture.text_height}
           sdl2.RenderCopy(renderer, active_cached_texture.window_status_cache.texture, nil, &rect)
         }
