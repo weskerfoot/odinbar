@@ -20,7 +20,7 @@ import "vendor:x11/xlib"
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
-icon_size :i32 = 31 // Note that it loads 32x32 icons by default so this matches that
+icon_size :i32 = 32 // Note that it loads 32x32 icons by default so this matches that
 preferred_font: cstring = "Noto Sans"
 
 RenderCache :: struct {
@@ -1063,7 +1063,6 @@ main :: proc() {
   event : sdl2.Event
 
   ttf.Init()
-
   white : sdl2.Color = {255, 0, 0, 255}
 
   current_event : xlib.XEvent
@@ -1244,7 +1243,7 @@ main :: proc() {
           rect : sdl2.Rect = {offset+icon_size, 5, active_cached_texture.text_width, active_cached_texture.text_height}
           icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
           if x_pos > offset && x_pos <= (offset+icon_size) {
-            should_switch_to_window = active_window
+            // This is the currently focused window
             sdl2.RenderCopy(renderer, active_cached_texture.icon_status_cache.texture, nil, &icon_rect)
           }
           else {
