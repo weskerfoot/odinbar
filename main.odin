@@ -1019,7 +1019,7 @@ main :: proc() {
   defer xlib.CloseDisplay(display)
   screen := xlib.DefaultScreen(display)
   screen_width := xlib.DisplayWidth(display, screen)
-  bar_height :u32 = 45
+  bar_height :u32 = cast(u32)icon_size
 
   // For expanding path to odinbar
   odinbar_wordexp :posix.wordexp_t
@@ -1061,13 +1061,13 @@ main :: proc() {
   xlib.SelectInput(display, win, {xlib.EventMaskBits.Exposure})
 
   // Map window
-  sdl_window := sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)win))
+  bar_sdl_window := sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)win))
   sdl_selector_win := sdl2.CreateWindowFrom((cast(rawptr)cast(uintptr)selector_win))
   set_window_props(selector_win, 300, 300, display, false)
   xlib.MapWindow(display, win)
   xlib.Flush(display)
 
-  renderer := sdl2.CreateRenderer(sdl_window, -1, {sdl2.RendererFlags.ACCELERATED})
+  renderer := sdl2.CreateRenderer(bar_sdl_window, -1, {sdl2.RendererFlags.ACCELERATED})
   defer sdl2.DestroyRenderer(renderer)
 
   selector_renderer := sdl2.CreateRenderer(sdl_selector_win, -1, {sdl2.RendererFlags.ACCELERATED})
@@ -1113,18 +1113,22 @@ main :: proc() {
   x_pos, y_pos: i32
 
   should_switch_to_window : Maybe(xlib.XID) = nil
-  is_mouse_focused :bool = false
+  mouse_on_bar :bool = false
 
   for running {
       for sdl2.PollEvent(&event) != false {
           if event.type == sdl2.EventType.QUIT {
               running = false
           }
-          else if event.type == sdl2.EventType.WINDOWEVENT && event.window.event == sdl2.WindowEventID.LEAVE {
-            is_mouse_focused = false
+          else if (event.type == sdl2.EventType.WINDOWEVENT
+                   && event.window.event == sdl2.WindowEventID.LEAVE
+                   && event.window.windowID == sdl2.GetWindowID(bar_sdl_window)) {
+            mouse_on_bar = false
           }
-          else if event.type == sdl2.EventType.WINDOWEVENT && event.window.event == sdl2.WindowEventID.ENTER {
-            is_mouse_focused = true
+          else if (event.type == sdl2.EventType.WINDOWEVENT
+                   && event.window.event == sdl2.WindowEventID.ENTER
+                   && event.window.windowID == sdl2.GetWindowID(bar_sdl_window)) {
+            mouse_on_bar = true
           }
           else if event.type == sdl2.EventType.MOUSEBUTTONDOWN {
             fmt.println("button down")
@@ -1248,7 +1252,7 @@ main :: proc() {
           icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
           border_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
           border_rect_inner : sdl2.Rect = {offset+border_width, border_width, icon_size-(border_width*2), icon_size-(border_width*2)}
-          if x_pos > offset && x_pos <= (offset+icon_size) && is_mouse_focused {
+          if x_pos > offset && x_pos <= (offset+icon_size) && mouse_on_bar {
             should_switch_to_window = v.window_id
             sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 90)
             sdl2.RenderFillRect(renderer, &border_rect)
