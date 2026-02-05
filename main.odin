@@ -16,6 +16,7 @@ import "vendor:sdl2"
 import "vendor:sdl2/ttf"
 import "vendor:sdl2/image"
 import "vendor:x11/xlib"
+foreign import fontconfig "system:fontconfig"
 
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
@@ -153,8 +154,6 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
   digit_cache.widths[100] = text_width
   digit_cache.heights[100] = text_height
 }
-
-foreign import fontconfig "system:fontconfig"
 
 FcMatrix :: struct {
     xx : c.double,
@@ -1272,8 +1271,8 @@ main :: proc() {
         if active_ok {
           sep_width :i32 = 3
           sep_rect : sdl2.Rect = {offset+5, 0, sep_width, icon_size}
-          rect : sdl2.Rect = {offset+sep_width+15, 5, active_cached_texture.text_width, active_cached_texture.text_height}
-          sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 90)
+          rect : sdl2.Rect = {offset+sep_width+10, 5, active_cached_texture.text_width, active_cached_texture.text_height}
+          sdl2.SetRenderDrawColor(renderer, 15, 150, 2, 90)
           sdl2.RenderFillRect(renderer, &sep_rect)
           sdl2.RenderCopy(renderer, active_cached_texture.window_status_cache.texture, nil, &rect)
         }
