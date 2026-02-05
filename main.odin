@@ -1099,7 +1099,7 @@ main :: proc() {
   cache_active_windows(display, root, renderer, selector_renderer)
 
   init_digits(renderer)
-  sep_width := digit_cache.widths[100]
+  clock_sep_width := digit_cache.widths[100]
 
   tz, ok_tz := timezone.region_load("America/Toronto")
   defer timezone.region_destroy(tz)
@@ -1270,7 +1270,11 @@ main :: proc() {
       if ok_window {
         active_cached_texture, active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
         if active_ok {
-          rect : sdl2.Rect = {offset, 5, active_cached_texture.text_width, active_cached_texture.text_height}
+          sep_width :i32 = 3
+          sep_rect : sdl2.Rect = {offset+5, 0, sep_width, icon_size}
+          rect : sdl2.Rect = {offset+sep_width+15, 5, active_cached_texture.text_width, active_cached_texture.text_height}
+          sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 90)
+          sdl2.RenderFillRect(renderer, &sep_rect)
           sdl2.RenderCopy(renderer, active_cached_texture.window_status_cache.texture, nil, &rect)
         }
         else {
@@ -1284,14 +1288,14 @@ main :: proc() {
       minute := dt_with_tz.minute
       second := dt_with_tz.second
 
-      clock_offset := screen_width - (digit_cache.widths[hour] + digit_cache.widths[minute] + digit_cache.widths[second] + sep_width*2)
+      clock_offset := screen_width - (digit_cache.widths[hour] + digit_cache.widths[minute] + digit_cache.widths[second] + clock_sep_width*2)
 
       if hour >= 0 && hour <= 60 && minute >= 0 && minute <= 60 && second >= 0 && second <= 60 {
         num_rect_hour : sdl2.Rect = {clock_offset, 0, digit_cache.widths[hour], digit_cache.heights[hour]}
         num_rect_hour_sep : sdl2.Rect = {clock_offset + digit_cache.widths[hour], 0, digit_cache.widths[100], digit_cache.heights[100]}
-        num_rect_minute : sdl2.Rect = {clock_offset + digit_cache.widths[hour] + sep_width, 0, digit_cache.widths[minute], digit_cache.heights[minute]}
-        num_rect_minute_sep : sdl2.Rect = {clock_offset + digit_cache.widths[hour] + digit_cache.widths[minute] + sep_width, 0, digit_cache.widths[100], digit_cache.heights[100]}
-        num_rect_second : sdl2.Rect = {clock_offset + digit_cache.widths[minute] + digit_cache.widths[hour] + sep_width*2, 0, digit_cache.widths[second], digit_cache.heights[second]}
+        num_rect_minute : sdl2.Rect = {clock_offset + digit_cache.widths[hour] + clock_sep_width, 0, digit_cache.widths[minute], digit_cache.heights[minute]}
+        num_rect_minute_sep : sdl2.Rect = {clock_offset + digit_cache.widths[hour] + digit_cache.widths[minute] + clock_sep_width, 0, digit_cache.widths[100], digit_cache.heights[100]}
+        num_rect_second : sdl2.Rect = {clock_offset + digit_cache.widths[minute] + digit_cache.widths[hour] + clock_sep_width*2, 0, digit_cache.widths[second], digit_cache.heights[second]}
 
         sdl2.RenderCopy(renderer, digit_cache.textures[hour], nil, &num_rect_hour)
         sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_hour_sep)
