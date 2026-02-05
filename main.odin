@@ -126,7 +126,7 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
   padded :[2]string
   padded[0] = "0"
   for i in 0..<10 {
-    padded[1] = strconv.itoa(c, i)
+    padded[1] = strconv.write_int(c, cast(i64)i, 10)
     concatenated := strings.concatenate(padded[:])
     defer delete(concatenated)
     num_st = strings.clone_to_cstring(concatenated)
@@ -138,7 +138,7 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
     digit_cache.heights[i] = text_height
   }
   for i in 10..<100 {
-    num_st = strings.clone_to_cstring(strconv.itoa(c, i))
+    num_st = strings.clone_to_cstring(strconv.write_int(c, cast(i64)i, 10))
     defer delete(num_st)
     ttf.SizeUTF8(font, num_st, &text_width, &text_height)
     digit_cache.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
