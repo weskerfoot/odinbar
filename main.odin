@@ -1270,7 +1270,7 @@ main :: proc() {
         active_cached_texture, active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
         if active_ok {
           sep_width :i32 = 3
-          sep_rect : sdl2.Rect = {offset+5, 0, sep_width, icon_size}
+          sep_rect : sdl2.Rect = {offset+5, 0, sep_width, cast(i32)bar_height}
           rect : sdl2.Rect = {offset+sep_width+10, 5, active_cached_texture.text_width, active_cached_texture.text_height}
           sdl2.SetRenderDrawColor(renderer, 15, 150, 2, 90)
           sdl2.RenderFillRect(renderer, &sep_rect)
