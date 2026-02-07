@@ -1164,7 +1164,7 @@ main :: proc() {
                    && event.window.windowID == sdl2.GetWindowID(sdl_selector_win)) {
             selector_state.focus_state = FocusState.FOCUSED
           }
-          else if ((event.type == sdl2.EventType.MOUSEBUTTONDOWN) &&
+          else if ((event.type == sdl2.EventType.MOUSEBUTTONUP) &&
                    event.window.windowID == sdl2.GetWindowID(bar_sdl_window)) {
             fmt.println("button event", event.type)
             fmt.println(event)
@@ -1174,6 +1174,11 @@ main :: proc() {
               bar_state.window_to_switch_to = nil
               switch_to_window(display, bar_window_to_switch_to)
               bar_state.focus_state = FocusState.FOCUSED
+              if selector_state.view_state == ViewState.SHOWING {
+                selector_state.view_state = ViewState.HIDDEN
+                selector_state.focus_state = FocusState.UNFOCUSED
+                xlib.UnmapWindow(display, selector_win)
+              }
             }
             else if selector_state.view_state == ViewState.HIDDEN {
               // Not switching to a window, show selector then
@@ -1187,9 +1192,11 @@ main :: proc() {
               xlib.UnmapWindow(display, selector_win)
               selector_state.view_state = ViewState.HIDDEN
               selector_state.focus_state = FocusState.UNFOCUSED
+              bar_state.view_state = ViewState.SHOWING
+              bar_state.focus_state = FocusState.FOCUSED
             }
           }
-          else if ((event.type == sdl2.EventType.MOUSEBUTTONDOWN) &&
+          else if ((event.type == sdl2.EventType.MOUSEBUTTONUP) &&
                    event.window.windowID == sdl2.GetWindowID(sdl_selector_win)) {
             fmt.println("button event", event.type)
             fmt.println(event)
@@ -1198,7 +1205,9 @@ main :: proc() {
               fmt.println("switching to a window from the selector")
               selector_state.window_to_switch_to = nil
               switch_to_window(display, sel_window_to_switch_to)
-              selector_state.focus_state = FocusState.FOCUSED
+              xlib.UnmapWindow(display, selector_win)
+              selector_state.focus_state = FocusState.UNFOCUSED
+              selector_state.view_state = ViewState.HIDDEN
             }
           }
       }
