@@ -106,7 +106,7 @@ free_cache_record :: proc(v: TextCache) {
   sdl2.DestroyTexture(v.window_selector_cache.texture)
   delete(v.window_name)
   if v.icon_status_cache.rwops != nil {
-    sdl2.FreeRW(v.icon_status_cache.rwops)
+    sdl2.RWclose(v.icon_status_cache.rwops)
   }
   if v.icon_status_cache.image_buf != nil {
     delete(v.icon_status_cache.image_buf)
@@ -540,9 +540,15 @@ get_window_icon_from_file :: proc(display: ^xlib.Display, xid: xlib.XID) -> Mayb
   icon_from_name, icon_from_name_ok := get_icon_from_class_name(hint_return.res_name).?
   icon_from_class, icon_from_class_ok := get_icon_from_class_name(hint_return.res_class).?
   if icon_from_name_ok && icon_from_name.surface != nil {
+    if icon_from_class_ok {
+      sdl2.RWclose(icon_from_class.rwops)
+    }
     return icon_from_name
   }
   if icon_from_class_ok && icon_from_class.surface != nil {
+    if icon_from_name_ok {
+      sdl2.RWclose(icon_from_name.rwops)
+    }
     return icon_from_class
   }
   return nil
@@ -1371,5 +1377,9 @@ main :: proc() {
       }
       sdl2.RenderPresent(renderer)
       sdl2.Delay(8)
+  }
+
+  for &v in &cache {
+    free_cache_record(v)
   }
 }
