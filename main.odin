@@ -21,6 +21,22 @@ foreign import fontconfig "system:fontconfig"
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
+ViewState :: enum {
+  SHOWING,
+  HIDDEN,
+}
+
+FocusState :: enum {
+  FOCUSED,
+  UNFOCUSED,
+}
+
+WinState :: struct {
+  view_state: ViewState,
+  focus_state: FocusState,
+  win_id: u32
+}
+
 icon_size :i32 = 32 // Note that it loads 32x32 icons by default so this matches that
 preferred_font: cstring = "Noto Sans"
 
@@ -1107,12 +1123,19 @@ main :: proc() {
     fmt.panicf("Invalid timezone")
   }
 
-  selector_showing :bool = false
+  selector_state :WinState
+  selector_state.view_state = ViewState.HIDDEN
+  selector_state.focus_state = FocusState.UNFOCUSED
+  selector_state.win_id = sdl2.GetWindowID(sdl_selector_win)
+
+  bar_state :WinState
+  bar_state.view_state = ViewState.SHOWING
+  bar_state.focus_state = FocusState.UNFOCUSED
+  bar_state.win_id = sdl2.GetWindowID(bar_sdl_window)
 
   x_pos, y_pos: i32
 
   should_switch_to_window : Maybe(xlib.XID) = nil
-  mouse_on_bar :bool = false
 
   for running {
       for sdl2.PollEvent(&event) != false {
@@ -1122,12 +1145,22 @@ main :: proc() {
           else if (event.type == sdl2.EventType.WINDOWEVENT
                    && event.window.event == sdl2.WindowEventID.LEAVE
                    && event.window.windowID == sdl2.GetWindowID(bar_sdl_window)) {
-            mouse_on_bar = false
+            bar_state.focus_state = FocusState.UNFOCUSED
           }
           else if (event.type == sdl2.EventType.WINDOWEVENT
                    && event.window.event == sdl2.WindowEventID.ENTER
                    && event.window.windowID == sdl2.GetWindowID(bar_sdl_window)) {
-            mouse_on_bar = true
+            bar_state.focus_state = FocusState.FOCUSED
+          }
+          else if (event.type == sdl2.EventType.WINDOWEVENT
+                   && event.window.event == sdl2.WindowEventID.LEAVE
+                   && event.window.windowID == sdl2.GetWindowID(sdl_selector_win)) {
+            selector_state.focus_state = FocusState.UNFOCUSED
+          }
+          else if (event.type == sdl2.EventType.WINDOWEVENT
+                   && event.window.event == sdl2.WindowEventID.ENTER
+                   && event.window.windowID == sdl2.GetWindowID(sdl_selector_win)) {
+            selector_state.focus_state = FocusState.FOCUSED
           }
           else if event.type == sdl2.EventType.MOUSEBUTTONDOWN {
             fmt.println("button down")
@@ -1137,14 +1170,14 @@ main :: proc() {
             // Check if we clicked on an icon or the selector
             // This would work better as an enum of possible click states I think
             if !switch_window_ok {
-              if !selector_showing {
-                selector_showing = true
+              if selector_state.view_state == ViewState.HIDDEN {
+                selector_state.view_state = ViewState.SHOWING
                 xlib.MapWindow(display, selector_win)
                 sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
               }
               else {
                 xlib.UnmapWindow(display, selector_win)
-                selector_showing = false
+                selector_state.view_state = ViewState.HIDDEN
               }
             }
             if switch_window_ok {
@@ -1182,7 +1215,7 @@ main :: proc() {
           xlib.QueryTree(display, window_id, &root_ret, &parent_ret, &children_ret, &n_children_ret)
           defer xlib.Free(children_ret)
 
-          if selector_showing {
+          if selector_state.view_state == ViewState.SHOWING {
             sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
           }
           attrs, attrs_ok := get_attributes(display, window_id).?
@@ -1205,7 +1238,7 @@ main :: proc() {
             window_id := current_event.xproperty.window
             attrs, attrs_ok := get_attributes(display, window_id).?
             if window_id != 0 {
-              if selector_showing {
+              if selector_state.view_state == ViewState.SHOWING {
                 sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
               }
               if attrs_ok && attrs.override_redirect == false {
@@ -1223,11 +1256,16 @@ main :: proc() {
         }
       }
 
-      if selector_showing {
+      sdl2.GetMouseState(&x_pos, &y_pos)
+      if selector_state.view_state == ViewState.SHOWING {
         offset :i32 = 0
         sdl2.SetRenderDrawColor(selector_renderer, 23, 0, 60, 255)
         sdl2.RenderClear(selector_renderer)
         for v in &cache {
+          if y_pos > offset && y_pos <= (offset+v.text_height) && selector_state.focus_state == FocusState.FOCUSED && v.is_active {
+            offset += v.text_height
+            continue
+          }
           if v.is_active {
             rect : sdl2.Rect = {0, offset, v.text_width, v.text_height}
             sdl2.RenderCopy(selector_renderer, v.window_selector_cache.texture, nil, &rect)
@@ -1242,7 +1280,6 @@ main :: proc() {
       active_window, ok_window := get_active_window(display).?
       offset :i32 = 0
 
-      sdl2.GetMouseState(&x_pos, &y_pos)
       // Show icons
       should_switch_to_window = nil
       for v in &cache {
@@ -1251,7 +1288,7 @@ main :: proc() {
           icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
           border_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
           border_rect_inner : sdl2.Rect = {offset+border_width, border_width, icon_size-(border_width*2), icon_size-(border_width*2)}
-          if x_pos > offset && x_pos <= (offset+icon_size) && mouse_on_bar {
+          if x_pos > offset && x_pos <= (offset+icon_size) && bar_state.focus_state == FocusState.FOCUSED {
             should_switch_to_window = v.window_id
             sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 90)
             sdl2.RenderFillRect(renderer, &border_rect)
