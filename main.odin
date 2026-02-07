@@ -34,7 +34,8 @@ FocusState :: enum {
 WinState :: struct {
   view_state: ViewState,
   focus_state: FocusState,
-  win_id: u32
+  win_id: u32,
+  window_to_switch_to: Maybe(xlib.XID)
 }
 
 icon_size :i32 = 32 // Note that it loads 32x32 icons by default so this matches that
@@ -1127,15 +1128,15 @@ main :: proc() {
   selector_state.view_state = ViewState.HIDDEN
   selector_state.focus_state = FocusState.UNFOCUSED
   selector_state.win_id = sdl2.GetWindowID(sdl_selector_win)
+  selector_state.window_to_switch_to = nil
 
   bar_state :WinState
   bar_state.view_state = ViewState.SHOWING
   bar_state.focus_state = FocusState.UNFOCUSED
   bar_state.win_id = sdl2.GetWindowID(bar_sdl_window)
+  bar_state.window_to_switch_to = nil
 
   x_pos, y_pos: i32
-
-  should_switch_to_window : Maybe(xlib.XID) = nil
 
   for running {
       for sdl2.PollEvent(&event) != false {
@@ -1146,6 +1147,7 @@ main :: proc() {
                    && event.window.event == sdl2.WindowEventID.LEAVE
                    && event.window.windowID == sdl2.GetWindowID(bar_sdl_window)) {
             bar_state.focus_state = FocusState.UNFOCUSED
+            bar_state.window_to_switch_to = nil
           }
           else if (event.type == sdl2.EventType.WINDOWEVENT
                    && event.window.event == sdl2.WindowEventID.ENTER
@@ -1162,33 +1164,42 @@ main :: proc() {
                    && event.window.windowID == sdl2.GetWindowID(sdl_selector_win)) {
             selector_state.focus_state = FocusState.FOCUSED
           }
-          else if event.type == sdl2.EventType.MOUSEBUTTONDOWN {
-            fmt.println("button down")
+          else if ((event.type == sdl2.EventType.MOUSEBUTTONDOWN) &&
+                   event.window.windowID == sdl2.GetWindowID(bar_sdl_window)) {
+            fmt.println("button event", event.type)
             fmt.println(event)
-            window_to_switch_to, switch_window_ok := should_switch_to_window.?
-
-            // Check if we clicked on an icon or the selector
-            // This would work better as an enum of possible click states I think
-            if !switch_window_ok {
-              if selector_state.view_state == ViewState.HIDDEN {
-                selector_state.view_state = ViewState.SHOWING
-                xlib.MapWindow(display, selector_win)
-                sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
-              }
-              else {
-                xlib.UnmapWindow(display, selector_win)
-                selector_state.view_state = ViewState.HIDDEN
-              }
+            bar_window_to_switch_to, bar_window_ok := bar_state.window_to_switch_to.?
+            if bar_state.view_state == ViewState.SHOWING && bar_state.focus_state == FocusState.FOCUSED && bar_window_ok {
+              fmt.println("switching to a window from the bar")
+              bar_state.window_to_switch_to = nil
+              switch_to_window(display, bar_window_to_switch_to)
+              bar_state.focus_state = FocusState.FOCUSED
             }
-            if switch_window_ok {
-              fmt.println("trying to switch window")
-              switch_to_window(display, window_to_switch_to)
+            else if selector_state.view_state == ViewState.HIDDEN {
+              // Not switching to a window, show selector then
+              // Later there will be other possible buttons to click?
+              fmt.println("opening up the selector")
+              selector_state.view_state = ViewState.SHOWING
+              xlib.MapWindow(display, selector_win)
+              sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
             }
-            should_switch_to_window = nil
+            else if selector_state.view_state == ViewState.SHOWING {
+              xlib.UnmapWindow(display, selector_win)
+              selector_state.view_state = ViewState.HIDDEN
+              selector_state.focus_state = FocusState.UNFOCUSED
+            }
           }
-          else if event.type == sdl2.EventType.MOUSEBUTTONUP {
-            fmt.println("button up")
+          else if ((event.type == sdl2.EventType.MOUSEBUTTONDOWN) &&
+                   event.window.windowID == sdl2.GetWindowID(sdl_selector_win)) {
+            fmt.println("button event", event.type)
             fmt.println(event)
+            sel_window_to_switch_to, sel_window_ok := selector_state.window_to_switch_to.?
+            if selector_state.view_state == ViewState.SHOWING && selector_state.focus_state == FocusState.FOCUSED && sel_window_ok {
+              fmt.println("switching to a window from the selector")
+              selector_state.window_to_switch_to = nil
+              switch_to_window(display, sel_window_to_switch_to)
+              selector_state.focus_state = FocusState.FOCUSED
+            }
           }
       }
 
@@ -1256,6 +1267,7 @@ main :: proc() {
         }
       }
 
+      // Show selector menu
       sdl2.GetMouseState(&x_pos, &y_pos)
       if selector_state.view_state == ViewState.SHOWING {
         offset :i32 = 0
@@ -1264,6 +1276,7 @@ main :: proc() {
         for v in &cache {
           if y_pos > offset && y_pos <= (offset+v.text_height) && selector_state.focus_state == FocusState.FOCUSED && v.is_active {
             offset += v.text_height
+            selector_state.window_to_switch_to = v.window_id
             continue
           }
           if v.is_active {
@@ -1273,6 +1286,10 @@ main :: proc() {
           }
         }
         sdl2.RenderPresent(selector_renderer)
+        // Make sure not to focus a non-existent item
+        if y_pos > offset {
+          selector_state.window_to_switch_to = nil
+        }
       }
 
       sdl2.SetRenderDrawColor(renderer, 0, 0, 0, 255)
@@ -1281,7 +1298,6 @@ main :: proc() {
       offset :i32 = 0
 
       // Show icons
-      should_switch_to_window = nil
       for v in &cache {
         if v.is_active && v.icon_status_cache.texture != nil {
           border_width :i32 = 2
@@ -1289,12 +1305,12 @@ main :: proc() {
           border_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
           border_rect_inner : sdl2.Rect = {offset+border_width, border_width, icon_size-(border_width*2), icon_size-(border_width*2)}
           if x_pos > offset && x_pos <= (offset+icon_size) && bar_state.focus_state == FocusState.FOCUSED {
-            should_switch_to_window = v.window_id
             sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 90)
             sdl2.RenderFillRect(renderer, &border_rect)
             sdl2.SetRenderDrawColor(renderer, 0, 0, 0, 90)
             sdl2.RenderFillRect(renderer, &border_rect_inner)
             sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
+            bar_state.window_to_switch_to = v.window_id
           }
           else {
             sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
@@ -1303,9 +1319,14 @@ main :: proc() {
         }
       }
 
+      // Make sure not to focus a non-existent icon
+      if x_pos > offset {
+        bar_state.window_to_switch_to = nil
+      }
+
       if ok_window {
-        active_cached_texture, active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
-        if active_ok {
+        active_cached_texture, selector_active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
+        if selector_active_ok {
           sep_width :i32 = 3
           sep_rect : sdl2.Rect = {offset+5, 0, sep_width, cast(i32)bar_height}
           rect : sdl2.Rect = {offset+sep_width+10, 5, active_cached_texture.text_width, active_cached_texture.text_height}
