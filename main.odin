@@ -1270,24 +1270,24 @@ main :: proc() {
       // Show selector menu
       sdl2.GetMouseState(&x_pos, &y_pos)
       if selector_state.view_state == ViewState.SHOWING {
-        offset :i32 = 0
+        sel_y_offset :i32 = 0
         sdl2.SetRenderDrawColor(selector_renderer, 23, 0, 60, 255)
         sdl2.RenderClear(selector_renderer)
         for v in &cache {
-          if y_pos > offset && y_pos <= (offset+v.text_height) && selector_state.focus_state == FocusState.FOCUSED && v.is_active {
-            offset += v.text_height
+          if y_pos > sel_y_offset && y_pos <= (sel_y_offset+v.text_height) && selector_state.focus_state == FocusState.FOCUSED && v.is_active {
+            sel_y_offset += v.text_height
             selector_state.window_to_switch_to = v.window_id
             continue
           }
           if v.is_active {
-            rect : sdl2.Rect = {0, offset, v.text_width, v.text_height}
+            rect : sdl2.Rect = {0, sel_y_offset, v.text_width, v.text_height}
             sdl2.RenderCopy(selector_renderer, v.window_selector_cache.texture, nil, &rect)
-            offset += v.text_height
+            sel_y_offset += v.text_height
           }
         }
         sdl2.RenderPresent(selector_renderer)
         // Make sure not to focus a non-existent item
-        if y_pos > offset {
+        if y_pos > sel_y_offset {
           selector_state.window_to_switch_to = nil
         }
       }
@@ -1295,16 +1295,16 @@ main :: proc() {
       sdl2.SetRenderDrawColor(renderer, 0, 0, 0, 255)
       sdl2.RenderClear(renderer)
       active_window, ok_window := get_active_window(display).?
-      offset :i32 = 0
+      bar_x_offset :i32 = 0
 
       // Show icons
       for v in &cache {
         if v.is_active && v.icon_status_cache.texture != nil {
           border_width :i32 = 2
-          icon_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
-          border_rect : sdl2.Rect = {offset, 0, icon_size, icon_size}
-          border_rect_inner : sdl2.Rect = {offset+border_width, border_width, icon_size-(border_width*2), icon_size-(border_width*2)}
-          if x_pos > offset && x_pos <= (offset+icon_size) && bar_state.focus_state == FocusState.FOCUSED {
+          icon_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
+          border_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
+          border_rect_inner : sdl2.Rect = {bar_x_offset+border_width, border_width, icon_size-(border_width*2), icon_size-(border_width*2)}
+          if x_pos > bar_x_offset && x_pos <= (bar_x_offset+icon_size) && bar_state.focus_state == FocusState.FOCUSED {
             sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 90)
             sdl2.RenderFillRect(renderer, &border_rect)
             sdl2.SetRenderDrawColor(renderer, 0, 0, 0, 90)
@@ -1315,12 +1315,12 @@ main :: proc() {
           else {
             sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
           }
-          offset += icon_size
+          bar_x_offset += icon_size
         }
       }
 
       // Make sure not to focus a non-existent icon
-      if x_pos > offset {
+      if x_pos > bar_x_offset {
         bar_state.window_to_switch_to = nil
       }
 
@@ -1328,8 +1328,8 @@ main :: proc() {
         active_cached_texture, selector_active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
         if selector_active_ok {
           sep_width :i32 = 3
-          sep_rect : sdl2.Rect = {offset+5, 0, sep_width, cast(i32)bar_height}
-          rect : sdl2.Rect = {offset+sep_width+10, 5, active_cached_texture.text_width, active_cached_texture.text_height}
+          sep_rect : sdl2.Rect = {bar_x_offset+5, 0, sep_width, cast(i32)bar_height}
+          rect : sdl2.Rect = {bar_x_offset+sep_width+10, 5, active_cached_texture.text_width, active_cached_texture.text_height}
           sdl2.SetRenderDrawColor(renderer, 15, 150, 2, 90)
           sdl2.RenderFillRect(renderer, &sep_rect)
           sdl2.RenderCopy(renderer, active_cached_texture.window_status_cache.texture, nil, &rect)
