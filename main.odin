@@ -1144,6 +1144,11 @@ main :: proc() {
 
   x_pos, y_pos: i32
 
+  icon_border_width :i32 = 0
+  icon_border_max :i32 = 6 // Maximum size of border for icons
+  icon_fade_n :i32 = 0 // Counter to control fade-in effect
+  icon_fade_delay :i32 = 10 // Controls how fast the fade-in is
+
   for running {
       for sdl2.PollEvent(&event) != false {
           if event.type == sdl2.EventType.QUIT {
@@ -1289,13 +1294,16 @@ main :: proc() {
         sdl2.SetRenderDrawColor(selector_renderer, 23, 0, 60, 255)
         sdl2.RenderClear(selector_renderer)
         for v in &cache {
+          rect : sdl2.Rect = {0, sel_y_offset, v.text_width, v.text_height}
           if y_pos > sel_y_offset && y_pos <= (sel_y_offset+v.text_height) && selector_state.focus_state == FocusState.FOCUSED && v.is_active {
             sel_y_offset += v.text_height
+            sdl2.SetTextureColorMod(v.window_selector_cache.texture, 0, 255, 0)
+            sdl2.RenderCopy(selector_renderer, v.window_selector_cache.texture, nil, &rect)
             selector_state.window_to_switch_to = v.window_id
             continue
           }
           if v.is_active {
-            rect : sdl2.Rect = {0, sel_y_offset, v.text_width, v.text_height}
+            sdl2.SetTextureColorMod(v.window_selector_cache.texture, 15, 150, 2)
             sdl2.RenderCopy(selector_renderer, v.window_selector_cache.texture, nil, &rect)
             sel_y_offset += v.text_height
           }
@@ -1313,18 +1321,36 @@ main :: proc() {
       bar_x_offset :i32 = 0
 
       // Show icons
+      border_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
+      border_rect_inner : sdl2.Rect = {bar_x_offset+icon_border_width, icon_border_width, icon_size-(icon_border_width*2), icon_size-(icon_border_width*2)}
+      icon_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
       for v in &cache {
         if v.is_active && v.icon_status_cache.texture != nil {
-          border_width :i32 = 2
-          icon_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
-          border_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
-          border_rect_inner : sdl2.Rect = {bar_x_offset+border_width, border_width, icon_size-(border_width*2), icon_size-(border_width*2)}
+          border_rect.x = bar_x_offset
+          border_rect_inner.x = bar_x_offset+icon_border_width
+          icon_rect.x = bar_x_offset
           if x_pos > bar_x_offset && x_pos <= (bar_x_offset+icon_size) && bar_state.focus_state == FocusState.FOCUSED {
             sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 90)
             sdl2.RenderFillRect(renderer, &border_rect)
             sdl2.SetRenderDrawColor(renderer, 0, 0, 0, 90)
             sdl2.RenderFillRect(renderer, &border_rect_inner)
             sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
+
+            // Reset border on window change
+            if bar_state.window_to_switch_to != v.window_id {
+              icon_border_width = 0
+              icon_fade_n = 0
+            }
+
+            if icon_fade_n >= icon_fade_delay && icon_border_width <= icon_border_max {
+              icon_border_width += 1
+              icon_fade_n = 0
+            }
+
+            if icon_fade_n <= icon_fade_delay {
+              icon_fade_n += 1
+            }
+
             bar_state.window_to_switch_to = v.window_id
           }
           else {
