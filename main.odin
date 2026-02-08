@@ -1145,9 +1145,9 @@ main :: proc() {
   x_pos, y_pos: i32
 
   icon_border_width :i32 = 0
-  icon_border_max :i32 = 6 // Maximum size of border for icons
+  icon_border_max :i32 = 8 // Maximum size of border for icons
   icon_fade_n :i32 = 0 // Counter to control fade-in effect
-  icon_fade_delay :i32 = 10 // Controls how fast the fade-in is
+  icon_fade_delay :i32 = 3 // Controls how fast the fade-in is
 
   for running {
       for sdl2.PollEvent(&event) != false {
@@ -1338,12 +1338,12 @@ main :: proc() {
 
             // Reset border on window change
             if bar_state.window_to_switch_to != v.window_id {
-              icon_border_width = 0
+              icon_border_width = icon_border_max
               icon_fade_n = 0
             }
 
-            if icon_fade_n >= icon_fade_delay && icon_border_width <= icon_border_max {
-              icon_border_width += 1
+            if icon_fade_n >= icon_fade_delay && icon_border_width > 1 {
+              icon_border_width -= 1
               icon_fade_n = 0
             }
 
