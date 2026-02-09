@@ -446,7 +446,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
   windows := cast([^]xlib.XID)data
   defer xlib.Free(data)
 
-  for i in 0..<nitems_return { // lol it's not 32 even though xlib says it is
+  for i in 0..<nitems_return {
     window_text_props, text_props_ok := get_window_name(display, windows[i]).?
     defer xlib.Free(window_text_props.value)
     if text_props_ok {
@@ -496,7 +496,7 @@ reconcile_client_list :: proc(display: ^xlib.Display,
   defer xlib.Free(data)
 
   found_window := false
-  for i in 0..<nitems_return { // lol it's not 32 even though xlib says it is
+  for i in 0..<nitems_return {
     if windows[i] == updated_window {
       found_window = true
       break
@@ -512,7 +512,6 @@ reconcile_client_list :: proc(display: ^xlib.Display,
     }
   }
 }
-
 
 get_window_name :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(xlib.XTextProperty) {
   props : xlib.XTextProperty
@@ -693,7 +692,7 @@ get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon)
   mask : u64 = 0x00000000000000FF
   image_buf : [dynamic]u8
 
-  for i in 0..<icon_data_nitems_return { // lol it's not 32 even though xlib says it is
+  for i in 0..<icon_data_nitems_return {
     r : u8 = cast(u8)(iter_data[i] & mask)
     g : u8 = cast(u8)((iter_data[i] >> 8) & mask)
     b : u8 = cast(u8)((iter_data[i] >> 16) & mask)
