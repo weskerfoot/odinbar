@@ -756,6 +756,46 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
   return window_id
 }
 
+get_workspace :: proc(display: ^xlib.Display, window_id: xlib.XID) -> Maybe(i64) {
+  net_wm_desktop := xlib.InternAtom(display, "_NET_WM_DESKTOP", false)
+
+  type_return :xlib.Atom
+  format_return :i32
+  nitems_return, bytes_left :uint = 0, 0
+  data :rawptr
+
+  workspace :i64 = -1
+
+  root := xlib.DefaultRootWindow(display)
+
+  result := xlib.GetWindowProperty(
+              display,
+              window_id,
+              net_wm_desktop,
+              0,
+              1,
+              false,
+              XA_CARDINAL,
+              &type_return,   // should be XA_CARDINAL
+              &format_return, // should be 32
+              &nitems_return,
+              &bytes_left,
+              &data
+          )
+
+  defer xlib.Free(data)
+  if result != cast(i32)xlib.Status.Success {
+    return nil
+  }
+  if nitems_return == 0 {
+    return nil
+  }
+  if data == nil {
+    return nil
+  }
+  return (cast(^i64)data)^
+}
+
 charset_cst : cstring = "charset"
 family_cst : cstring = "family"
 style_cst : cstring = "style"
@@ -1254,6 +1294,7 @@ main :: proc() {
             if attrs_ok {
               if attrs.override_redirect == false {
                 text_set_cached(display, renderer, selector_renderer, window_id)
+                fmt.println("workspace id = ", get_workspace(display, window_id))
                 xlib.SelectInput(display,
                                  window_id,
                                  {xlib.EventMaskBits.PropertyChange,
