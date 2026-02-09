@@ -41,41 +41,42 @@ WinState :: struct {
 icon_size :i32 = 32 // Note that it loads 32x32 icons by default so this matches that
 preferred_font: cstring = "Noto Sans"
 
-RenderCache :: struct {
+RenderRecord :: struct {
   surface: ^sdl2.Surface,
   texture: ^sdl2.Texture
 }
 
 // Convenience struct for procs that can return an icon
-// this stuff along with the texture is stored in IconCache
+// this stuff along with the texture is stored in IconRecord
 SDLIcon :: struct {
   surface: ^sdl2.Surface,
   image_buf: [dynamic]u8, // underlying buffer if not nil
   rwops: ^sdl2.RWops // possibly nil
 }
 
-IconCache :: struct {
+IconRecord :: struct {
   surface: ^sdl2.Surface,
   texture: ^sdl2.Texture,
   rwops: ^sdl2.RWops,
   image_buf: [dynamic]u8 // underlying buffer if not nil
 }
 
-WindowCache :: struct {
-  window_status_cache: RenderCache,
-  icon_status_cache: IconCache,
-  window_selector_cache: RenderCache,
+WindowRecord :: struct {
+  window_status_records: RenderRecord,
+  icon_status_records: IconRecord,
+  window_selector_records: RenderRecord,
   window_name: string,
   window_id: xlib.XID,
   text_width: i32,
   text_height: i32,
   is_active: bool,
-  font: ^ttf.Font
+  font: ^ttf.Font,
+  workspace_id: i64
 }
 
 get_max_width :: proc() -> i32 {
   total :i32 = 0
-  for v in &cache {
+  for v in &records {
     if v.is_active {
       total = max(total, v.text_width)
     }
@@ -86,7 +87,7 @@ get_max_width :: proc() -> i32 {
 get_max_height :: proc() -> i32 {
   max_height :i32 = 0
   count_active :i32 = 0
-  for v in &cache {
+  for v in &records {
     if v.is_active {
       max_height = max(max_height, v.text_height)
       count_active += 1
@@ -95,39 +96,43 @@ get_max_height :: proc() -> i32 {
   return (max_height + 10) * count_active
 }
 
-cache: #soa[dynamic]WindowCache
+records: #soa[dynamic]WindowRecord
 
-free_cache_record :: proc(v: WindowCache) {
-  sdl2.FreeSurface(v.window_status_cache.surface)
-  sdl2.FreeSurface(v.icon_status_cache.surface)
-  sdl2.FreeSurface(v.window_selector_cache.surface)
-  sdl2.DestroyTexture(v.window_status_cache.texture)
-  sdl2.DestroyTexture(v.icon_status_cache.texture)
-  sdl2.DestroyTexture(v.window_selector_cache.texture)
+// There are only 8 workspaces
+// This maps workspaces to arrays of window IDs
+workspace_to_windows: [8][dynamic]xlib.XID
+
+free_record :: proc(v: WindowRecord) {
+  sdl2.FreeSurface(v.window_status_records.surface)
+  sdl2.FreeSurface(v.icon_status_records.surface)
+  sdl2.FreeSurface(v.window_selector_records.surface)
+  sdl2.DestroyTexture(v.window_status_records.texture)
+  sdl2.DestroyTexture(v.icon_status_records.texture)
+  sdl2.DestroyTexture(v.window_selector_records.texture)
   delete(v.window_name)
-  if v.icon_status_cache.rwops != nil {
-    sdl2.RWclose(v.icon_status_cache.rwops)
+  if v.icon_status_records.rwops != nil {
+    sdl2.RWclose(v.icon_status_records.rwops)
   }
-  if v.icon_status_cache.image_buf != nil {
-    delete(v.icon_status_cache.image_buf)
+  if v.icon_status_records.image_buf != nil {
+    delete(v.icon_status_records.image_buf)
   }
 }
 
-FontCache :: struct {
+FontRecord :: struct {
   font_path: string,
   font: ^ttf.Font
 }
 
-font_cache: #soa[dynamic]FontCache
+font_records: #soa[dynamic]FontRecord
 
-DigitCache :: struct {
+DigitRecord :: struct {
   textures: [101]^sdl2.Texture,
   surfaces: [101]^sdl2.Surface,
   widths: [101]i32,
   heights: [101]i32
 }
 
-digit_cache : DigitCache
+digit_records : DigitRecord
 
 init_digits :: proc(renderer: ^sdl2.Renderer) {
   white : sdl2.Color = {100, 200, 100, 255}
@@ -150,26 +155,26 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
     num_st = strings.clone_to_cstring(concatenated)
     defer delete(num_st)
     ttf.SizeUTF8(font, num_st, &text_width, &text_height)
-    digit_cache.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
-    digit_cache.textures[i] = sdl2.CreateTextureFromSurface(renderer, digit_cache.surfaces[i])
-    digit_cache.widths[i] = text_width
-    digit_cache.heights[i] = text_height
+    digit_records.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
+    digit_records.textures[i] = sdl2.CreateTextureFromSurface(renderer, digit_records.surfaces[i])
+    digit_records.widths[i] = text_width
+    digit_records.heights[i] = text_height
   }
   for i in 10..<100 {
     num_st = strings.clone_to_cstring(strconv.write_int(c, cast(i64)i, 10))
     defer delete(num_st)
     ttf.SizeUTF8(font, num_st, &text_width, &text_height)
-    digit_cache.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
-    digit_cache.textures[i] = sdl2.CreateTextureFromSurface(renderer, digit_cache.surfaces[i])
-    digit_cache.widths[i] = text_width
-    digit_cache.heights[i] = text_height
+    digit_records.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
+    digit_records.textures[i] = sdl2.CreateTextureFromSurface(renderer, digit_records.surfaces[i])
+    digit_records.widths[i] = text_width
+    digit_records.heights[i] = text_height
   }
 
   ttf.SizeUTF8(font, ":", &text_width, &text_height)
-  digit_cache.surfaces[100] = ttf.RenderUTF8_Solid(font, ":", white)
-  digit_cache.textures[100] = sdl2.CreateTextureFromSurface(renderer, digit_cache.surfaces[100])
-  digit_cache.widths[100] = text_width
-  digit_cache.heights[100] = text_height
+  digit_records.surfaces[100] = ttf.RenderUTF8_Solid(font, ":", white)
+  digit_records.textures[100] = sdl2.CreateTextureFromSurface(renderer, digit_records.surfaces[100])
+  digit_records.widths[100] = text_width
+  digit_records.heights[100] = text_height
 }
 
 charset_cst : cstring = "charset"
@@ -291,42 +296,42 @@ get_attributes :: proc(display: ^xlib.Display,
   return attrs
 }
 
-text_get_cached :: proc(display: ^xlib.Display,
-                        renderer: ^sdl2.Renderer,
-                        selector_renderer: ^sdl2.Renderer,
-                        window_id: xlib.XID) -> Maybe(WindowCache) {
+get_record :: proc(display: ^xlib.Display,
+                   renderer: ^sdl2.Renderer,
+                   selector_renderer: ^sdl2.Renderer,
+                   window_id: xlib.XID) -> Maybe(WindowRecord) {
   if window_id == 0 {
-    fmt.println("got window_id == 0 in text_get_cached")
+    fmt.println("got window_id == 0 in get_record")
     return nil
   }
-  for v in cache {
+  for v in records {
     if v.window_id == window_id && v.is_active {
       return v
     }
   }
-  return text_set_cached(display, renderer, selector_renderer, window_id)
+  return set_record(display, renderer, selector_renderer, window_id)
 }
 
-text_set_cached :: proc(display: ^xlib.Display,
-                        renderer: ^sdl2.Renderer,
-                        selector_renderer: ^sdl2.Renderer,
-                        window_id: xlib.XID) -> Maybe(WindowCache) {
+set_record :: proc(display: ^xlib.Display,
+                   renderer: ^sdl2.Renderer,
+                   selector_renderer: ^sdl2.Renderer,
+                   window_id: xlib.XID) -> Maybe(WindowRecord) {
 
   if window_id == 0 {
-    fmt.println("got window_id == 0 in text_set_cached")
+    fmt.println("got window_id == 0 in set_record")
     return nil
   }
-  if len(cache) > 250 {
-    free_cache()
+  if len(records) > 250 {
+    free_records()
   }
 
   // If it's already in there find it and free the existing texture/surface first
   found_existing_window := -1
   i := 0
-  for &v in cache {
+  for &v in records {
     if v.window_id == window_id && v.is_active {
       found_existing_window = i
-      free_cache_record(v)
+      free_record(v)
       v.is_active = false
       break
     }
@@ -377,37 +382,44 @@ text_set_cached :: proc(display: ^xlib.Display,
   text_width, text_height : i32
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
-  result := WindowCache{RenderCache{win_name_surface, win_name_texture},
-                        IconCache{win_icon.surface, win_icon_texture, win_icon.rwops, win_icon.image_buf},
-                        RenderCache{win_name_select_surface, win_name_select_texture},
+  workspace_id, workspace_id_ok := get_workspace(display, window_id).?
+
+  if !workspace_id_ok {
+    workspace_id = -1
+  }
+
+  result := WindowRecord{RenderRecord{win_name_surface, win_name_texture},
+                        IconRecord{win_icon.surface, win_icon_texture, win_icon.rwops, win_icon.image_buf},
+                        RenderRecord{win_name_select_surface, win_name_select_texture},
                         strings.clone_from_cstring(active_window),
                         window_id,
                         text_width,
                         text_height,
                         true,
-                        font}
+                        font,
+                        workspace_id}
 
   if found_existing_window >= 0 {
-    cache[found_existing_window] = result
+    records[found_existing_window] = result
   }
   else {
-    append(&cache, result)
+    append(&records, result)
   }
 
   return result
 }
 
-free_cache :: proc() {
-  for &v in cache {
+free_records :: proc() {
+  for &v in records {
     if v.is_active {
-      free_cache_record(v)
+      free_record(v)
       v.is_active = false
     }
   }
-  clear(&cache)
+  clear(&records)
 }
 
-cache_active_windows :: proc(display: ^xlib.Display,
+records_active_windows :: proc(display: ^xlib.Display,
                              root_window: xlib.XID,
                              renderer: ^sdl2.Renderer,
                              selector_renderer: ^sdl2.Renderer) {
@@ -451,7 +463,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
     defer xlib.Free(window_text_props.value)
     if text_props_ok {
       fmt.println(cast(cstring)window_text_props.value)
-      text_set_cached(display, renderer, selector_renderer, windows[i])
+      set_record(display, renderer, selector_renderer, windows[i])
     }
   }
 }
@@ -503,9 +515,9 @@ reconcile_client_list :: proc(display: ^xlib.Display,
     }
   }
   if !found_window {
-    for &v in cache {
+    for &v in records {
       if v.window_id == updated_window && v.is_active {
-        free_cache_record(v)
+        free_record(v)
         v.is_active = false
         break
       }
@@ -881,8 +893,8 @@ get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) 
   p: ^c.uchar = cast(^c.uchar)text
   text_len := window_len
 
-  // Early check to see if the text can be rendered by any cached fonts
-  for f in font_cache {
+  // Early check to see if the text can be rendered by any fonts
+  for f in font_records {
     bytes_processed := check_text_renders(text, f.font)
     if bytes_processed == text_len {
       fmt.println("found matching font before running get_matching_font")
@@ -949,19 +961,19 @@ get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) 
       if v.u.f != nil {
         found_font := cast(cstring)v.u.f
         found_font_st := strings.clone_from_cstring(found_font)
-        found_font_cached : bool = false
-        for f in font_cache {
+        found_font_record : bool = false
+        for f in font_records {
           if f.font_path == found_font_st {
             ttf_font^ = f.font
-            found_font_cached = true
-            fmt.println("font cache hit")
+            found_font_record = true
+            fmt.println("font records hit")
             break
           }
         }
-        if !found_font_cached {
-          fmt.println("font cache miss")
+        if !found_font_record {
+          fmt.println("font records miss")
           ttf_font^ = ttf.OpenFont(found_font, 18)
-          append(&font_cache, FontCache{found_font_st, ttf_font^})
+          append(&font_records, FontRecord{found_font_st, ttf_font^})
         }
         else {
           delete(found_font_st)
@@ -1156,11 +1168,11 @@ main :: proc() {
                xlib.GrabMode.GrabModeAsync,
                xlib.GrabMode.GrabModeAsync)
 
-  // Gets all currently active windows and adds them to the cache
-  cache_active_windows(display, root, renderer, selector_renderer)
+  // Gets all currently active windows and adds them to the records
+  records_active_windows(display, root, renderer, selector_renderer)
 
   init_digits(renderer)
-  clock_sep_width := digit_cache.widths[100]
+  clock_sep_width := digit_records.widths[100]
 
   tz, ok_tz := timezone.region_load("America/Toronto")
   defer timezone.region_destroy(tz)
@@ -1265,9 +1277,9 @@ main :: proc() {
       for xlib.Pending(display) > 0 {
         xlib.NextEvent(display, &current_event)
         if (current_event.type == xlib.EventType.DestroyNotify) {
-          for &v in cache {
+          for &v in records {
             if v.is_active && v.window_id == current_event.xdestroywindow.window {
-              free_cache_record(v)
+              free_record(v)
               v.is_active = false
             }
           }
@@ -1296,7 +1308,7 @@ main :: proc() {
           if window_id != 0 { // FIXME check override_redirect instead?
             if attrs_ok {
               if attrs.override_redirect == false {
-                text_set_cached(display, renderer, selector_renderer, window_id)
+                set_record(display, renderer, selector_renderer, window_id)
                 fmt.println("workspace id = ", get_workspace(display, window_id))
                 xlib.SelectInput(display,
                                  window_id,
@@ -1318,7 +1330,7 @@ main :: proc() {
                 sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
               }
               if attrs_ok && attrs.override_redirect == false {
-                text_set_cached(display, renderer, selector_renderer, window_id)
+                set_record(display, renderer, selector_renderer, window_id)
               }
             }
           }
@@ -1338,18 +1350,18 @@ main :: proc() {
         sel_y_offset :i32 = 0
         sdl2.SetRenderDrawColor(selector_renderer, 23, 0, 60, 255)
         sdl2.RenderClear(selector_renderer)
-        for v in &cache {
+        for v in &records {
           rect : sdl2.Rect = {0, sel_y_offset, v.text_width, v.text_height}
           if y_pos > sel_y_offset && y_pos <= (sel_y_offset+v.text_height) && selector_state.focus_state == FocusState.FOCUSED && v.is_active {
             sel_y_offset += v.text_height
-            sdl2.SetTextureColorMod(v.window_selector_cache.texture, 0, 255, 0)
-            sdl2.RenderCopy(selector_renderer, v.window_selector_cache.texture, nil, &rect)
+            sdl2.SetTextureColorMod(v.window_selector_records.texture, 0, 255, 0)
+            sdl2.RenderCopy(selector_renderer, v.window_selector_records.texture, nil, &rect)
             selector_state.window_to_switch_to = v.window_id
             continue
           }
           if v.is_active {
-            sdl2.SetTextureColorMod(v.window_selector_cache.texture, 15, 150, 2)
-            sdl2.RenderCopy(selector_renderer, v.window_selector_cache.texture, nil, &rect)
+            sdl2.SetTextureColorMod(v.window_selector_records.texture, 15, 150, 2)
+            sdl2.RenderCopy(selector_renderer, v.window_selector_records.texture, nil, &rect)
             sel_y_offset += v.text_height
           }
         }
@@ -1369,8 +1381,8 @@ main :: proc() {
       border_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
       border_rect_inner : sdl2.Rect = {bar_x_offset+icon_border_width, icon_border_width, icon_size-(icon_border_width*2), icon_size-(icon_border_width*2)}
       icon_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
-      for v in &cache {
-        if v.is_active && v.icon_status_cache.texture != nil {
+      for v in &records {
+        if v.is_active && v.icon_status_records.texture != nil {
           border_rect.x = bar_x_offset
           border_rect_inner.x = bar_x_offset+icon_border_width
           icon_rect.x = bar_x_offset
@@ -1379,7 +1391,7 @@ main :: proc() {
             sdl2.RenderFillRect(renderer, &border_rect)
             sdl2.SetRenderDrawColor(renderer, 0, 0, 0, 90)
             sdl2.RenderFillRect(renderer, &border_rect_inner)
-            sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
+            sdl2.RenderCopy(renderer, v.icon_status_records.texture, nil, &icon_rect)
 
             // Reset border on window change
             if bar_state.window_to_switch_to != v.window_id {
@@ -1399,7 +1411,7 @@ main :: proc() {
             bar_state.window_to_switch_to = v.window_id
           }
           else {
-            sdl2.RenderCopy(renderer, v.icon_status_cache.texture, nil, &icon_rect)
+            sdl2.RenderCopy(renderer, v.icon_status_records.texture, nil, &icon_rect)
           }
           bar_x_offset += icon_size
         }
@@ -1411,14 +1423,14 @@ main :: proc() {
       }
 
       if ok_window {
-        active_cached_texture, selector_active_ok := text_get_cached(display, renderer, selector_renderer, active_window).?
+        active_record, selector_active_ok := get_record(display, renderer, selector_renderer, active_window).?
         if selector_active_ok {
           sep_width :i32 = 3
           sep_rect : sdl2.Rect = {bar_x_offset+5, 0, sep_width, cast(i32)bar_height}
-          rect : sdl2.Rect = {bar_x_offset+sep_width+10, 5, active_cached_texture.text_width, active_cached_texture.text_height}
+          rect : sdl2.Rect = {bar_x_offset+sep_width+10, 5, active_record.text_width, active_record.text_height}
           sdl2.SetRenderDrawColor(renderer, 15, 150, 2, 90)
           sdl2.RenderFillRect(renderer, &sep_rect)
-          sdl2.RenderCopy(renderer, active_cached_texture.window_status_cache.texture, nil, &rect)
+          sdl2.RenderCopy(renderer, active_record.window_status_records.texture, nil, &rect)
         }
         else {
           fmt.println("Failed to get any text to render!")
@@ -1431,26 +1443,24 @@ main :: proc() {
       minute := dt_with_tz.minute
       second := dt_with_tz.second
 
-      clock_offset := screen_width - (digit_cache.widths[hour] + digit_cache.widths[minute] + digit_cache.widths[second] + clock_sep_width*2)
+      clock_offset := screen_width - (digit_records.widths[hour] + digit_records.widths[minute] + digit_records.widths[second] + clock_sep_width*2)
 
       if hour >= 0 && hour <= 60 && minute >= 0 && minute <= 60 && second >= 0 && second <= 60 {
-        num_rect_hour : sdl2.Rect = {clock_offset, 0, digit_cache.widths[hour], digit_cache.heights[hour]}
-        num_rect_hour_sep : sdl2.Rect = {clock_offset + digit_cache.widths[hour], 0, digit_cache.widths[100], digit_cache.heights[100]}
-        num_rect_minute : sdl2.Rect = {clock_offset + digit_cache.widths[hour] + clock_sep_width, 0, digit_cache.widths[minute], digit_cache.heights[minute]}
-        num_rect_minute_sep : sdl2.Rect = {clock_offset + digit_cache.widths[hour] + digit_cache.widths[minute] + clock_sep_width, 0, digit_cache.widths[100], digit_cache.heights[100]}
-        num_rect_second : sdl2.Rect = {clock_offset + digit_cache.widths[minute] + digit_cache.widths[hour] + clock_sep_width*2, 0, digit_cache.widths[second], digit_cache.heights[second]}
+        num_rect_hour : sdl2.Rect = {clock_offset, 0, digit_records.widths[hour], digit_records.heights[hour]}
+        num_rect_hour_sep : sdl2.Rect = {clock_offset + digit_records.widths[hour], 0, digit_records.widths[100], digit_records.heights[100]}
+        num_rect_minute : sdl2.Rect = {clock_offset + digit_records.widths[hour] + clock_sep_width, 0, digit_records.widths[minute], digit_records.heights[minute]}
+        num_rect_minute_sep : sdl2.Rect = {clock_offset + digit_records.widths[hour] + digit_records.widths[minute] + clock_sep_width, 0, digit_records.widths[100], digit_records.heights[100]}
+        num_rect_second : sdl2.Rect = {clock_offset + digit_records.widths[minute] + digit_records.widths[hour] + clock_sep_width*2, 0, digit_records.widths[second], digit_records.heights[second]}
 
-        sdl2.RenderCopy(renderer, digit_cache.textures[hour], nil, &num_rect_hour)
-        sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_hour_sep)
-        sdl2.RenderCopy(renderer, digit_cache.textures[minute], nil, &num_rect_minute)
-        sdl2.RenderCopy(renderer, digit_cache.textures[100], nil, &num_rect_minute_sep)
-        sdl2.RenderCopy(renderer, digit_cache.textures[second], nil, &num_rect_second)
+        sdl2.RenderCopy(renderer, digit_records.textures[hour], nil, &num_rect_hour)
+        sdl2.RenderCopy(renderer, digit_records.textures[100], nil, &num_rect_hour_sep)
+        sdl2.RenderCopy(renderer, digit_records.textures[minute], nil, &num_rect_minute)
+        sdl2.RenderCopy(renderer, digit_records.textures[100], nil, &num_rect_minute_sep)
+        sdl2.RenderCopy(renderer, digit_records.textures[second], nil, &num_rect_second)
       }
       sdl2.RenderPresent(renderer)
       sdl2.Delay(8)
   }
 
-  for &v in &cache {
-    free_cache_record(v)
-  }
+  free_records()
 }
