@@ -61,7 +61,7 @@ IconCache :: struct {
   image_buf: [dynamic]u8 // underlying buffer if not nil
 }
 
-TextCache :: struct {
+WindowCache :: struct {
   window_status_cache: RenderCache,
   icon_status_cache: IconCache,
   window_selector_cache: RenderCache,
@@ -95,9 +95,9 @@ get_max_height :: proc() -> i32 {
   return (max_height + 10) * count_active
 }
 
-cache: #soa[dynamic]TextCache
+cache: #soa[dynamic]WindowCache
 
-free_cache_record :: proc(v: TextCache) {
+free_cache_record :: proc(v: WindowCache) {
   sdl2.FreeSurface(v.window_status_cache.surface)
   sdl2.FreeSurface(v.icon_status_cache.surface)
   sdl2.FreeSurface(v.window_selector_cache.surface)
@@ -120,14 +120,14 @@ FontCache :: struct {
 
 font_cache: #soa[dynamic]FontCache
 
-DigitTextCache :: struct {
+DigitCache :: struct {
   textures: [101]^sdl2.Texture,
   surfaces: [101]^sdl2.Surface,
   widths: [101]i32,
   heights: [101]i32
 }
 
-digit_cache : DigitTextCache
+digit_cache : DigitCache
 
 init_digits :: proc(renderer: ^sdl2.Renderer) {
   white : sdl2.Color = {100, 200, 100, 255}
@@ -294,7 +294,7 @@ get_attributes :: proc(display: ^xlib.Display,
 text_get_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
                         selector_renderer: ^sdl2.Renderer,
-                        window_id: xlib.XID) -> Maybe(TextCache) {
+                        window_id: xlib.XID) -> Maybe(WindowCache) {
   if window_id == 0 {
     fmt.println("got window_id == 0 in text_get_cached")
     return nil
@@ -310,7 +310,7 @@ text_get_cached :: proc(display: ^xlib.Display,
 text_set_cached :: proc(display: ^xlib.Display,
                         renderer: ^sdl2.Renderer,
                         selector_renderer: ^sdl2.Renderer,
-                        window_id: xlib.XID) -> Maybe(TextCache) {
+                        window_id: xlib.XID) -> Maybe(WindowCache) {
 
   if window_id == 0 {
     fmt.println("got window_id == 0 in text_set_cached")
@@ -377,15 +377,15 @@ text_set_cached :: proc(display: ^xlib.Display,
   text_width, text_height : i32
   ttf.SizeUTF8(font, active_window, &text_width, &text_height)
 
-  result := TextCache{RenderCache{win_name_surface, win_name_texture},
-                      IconCache{win_icon.surface, win_icon_texture, win_icon.rwops, win_icon.image_buf},
-                      RenderCache{win_name_select_surface, win_name_select_texture},
-                      strings.clone_from_cstring(active_window),
-                      window_id,
-                      text_width,
-                      text_height,
-                      true,
-                      font}
+  result := WindowCache{RenderCache{win_name_surface, win_name_texture},
+                        IconCache{win_icon.surface, win_icon_texture, win_icon.rwops, win_icon.image_buf},
+                        RenderCache{win_name_select_surface, win_name_select_texture},
+                        strings.clone_from_cstring(active_window),
+                        window_id,
+                        text_width,
+                        text_height,
+                        true,
+                        font}
 
   if found_existing_window >= 0 {
     cache[found_existing_window] = result
@@ -1272,10 +1272,12 @@ main :: proc() {
             }
           }
         }
+
         if (current_event.type == xlib.EventType.UnmapNotify) {
           updated_window := current_event.xdestroywindow.window
           reconcile_client_list(display, updated_window, renderer, selector_renderer)
         }
+
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
           root_ret : xlib.XID
@@ -1288,7 +1290,9 @@ main :: proc() {
           if selector_state.view_state == ViewState.SHOWING {
             sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
           }
+
           attrs, attrs_ok := get_attributes(display, window_id).?
+
           if window_id != 0 { // FIXME check override_redirect instead?
             if attrs_ok {
               if attrs.override_redirect == false {
@@ -1303,6 +1307,7 @@ main :: proc() {
             }
           }
         }
+
         if (current_event.type == xlib.EventType.PropertyNotify) {
           if (current_event.xproperty.atom == xlib.InternAtom(display, "_NET_WM_NAME", false) ||
               current_event.xproperty.atom == xlib.InternAtom(display, "WM_NAME", false)) {
