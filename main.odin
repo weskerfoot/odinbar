@@ -401,10 +401,9 @@ set_record :: proc(display: ^xlib.Display,
   }
   else {
     append(&window_records, result)
+    // Sort by workspace
+    slice.stable_sort_by(window_records[:], cmp_window_record)
   }
-
-  // Sort by workspace
-  slice.stable_sort_by(window_records[:], cmp_window_record)
 
   return result
 }
