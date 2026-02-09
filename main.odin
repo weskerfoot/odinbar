@@ -12,6 +12,7 @@ import "core:time"
 import "core:time/timezone"
 import "core:time/datetime"
 import "core:strconv"
+import "core:slice"
 import "vendor:sdl2"
 import "vendor:sdl2/ttf"
 import "vendor:sdl2/image"
@@ -74,9 +75,15 @@ WindowRecord :: struct {
   workspace_id: i64
 }
 
+window_records: [dynamic]WindowRecord
+
+cmp_window_record :: proc(i, j: WindowRecord) -> bool {
+  return i.workspace_id < j.workspace_id
+}
+
 get_max_width :: proc() -> i32 {
   total :i32 = 0
-  for v in &records {
+  for v in &window_records {
     if v.is_active {
       total = max(total, v.text_width)
     }
@@ -87,7 +94,7 @@ get_max_width :: proc() -> i32 {
 get_max_height :: proc() -> i32 {
   max_height :i32 = 0
   count_active :i32 = 0
-  for v in &records {
+  for v in &window_records {
     if v.is_active {
       max_height = max(max_height, v.text_height)
       count_active += 1
@@ -95,12 +102,6 @@ get_max_height :: proc() -> i32 {
   }
   return (max_height + 10) * count_active
 }
-
-records: #soa[dynamic]WindowRecord
-
-// There are only 8 workspaces
-// This maps workspaces to arrays of window IDs
-workspace_to_windows: [8][dynamic]xlib.XID
 
 free_record :: proc(v: WindowRecord) {
   sdl2.FreeSurface(v.window_status_records.surface)
@@ -304,7 +305,7 @@ get_record :: proc(display: ^xlib.Display,
     fmt.println("got window_id == 0 in get_record")
     return nil
   }
-  for v in records {
+  for v in window_records {
     if v.window_id == window_id && v.is_active {
       return v
     }
@@ -321,14 +322,14 @@ set_record :: proc(display: ^xlib.Display,
     fmt.println("got window_id == 0 in set_record")
     return nil
   }
-  if len(records) > 250 {
+  if len(window_records) > 250 {
     free_records()
   }
 
   // If it's already in there find it and free the existing texture/surface first
   found_existing_window := -1
   i := 0
-  for &v in records {
+  for &v in window_records {
     if v.window_id == window_id && v.is_active {
       found_existing_window = i
       free_record(v)
@@ -384,10 +385,6 @@ set_record :: proc(display: ^xlib.Display,
 
   workspace_id, workspace_id_ok := get_workspace(display, window_id).?
 
-  if !workspace_id_ok {
-    workspace_id = -1
-  }
-
   result := WindowRecord{RenderRecord{win_name_surface, win_name_texture},
                         IconRecord{win_icon.surface, win_icon_texture, win_icon.rwops, win_icon.image_buf},
                         RenderRecord{win_name_select_surface, win_name_select_texture},
@@ -400,23 +397,26 @@ set_record :: proc(display: ^xlib.Display,
                         workspace_id}
 
   if found_existing_window >= 0 {
-    records[found_existing_window] = result
+    window_records[found_existing_window] = result
   }
   else {
-    append(&records, result)
+    append(&window_records, result)
   }
+
+  // Sort by workspace
+  slice.sort_by(window_records[:], cmp_window_record)
 
   return result
 }
 
 free_records :: proc() {
-  for &v in records {
+  for &v in window_records {
     if v.is_active {
       free_record(v)
       v.is_active = false
     }
   }
-  clear(&records)
+  clear(&window_records)
 }
 
 records_active_windows :: proc(display: ^xlib.Display,
@@ -515,7 +515,7 @@ reconcile_client_list :: proc(display: ^xlib.Display,
     }
   }
   if !found_window {
-    for &v in records {
+    for &v in window_records {
       if v.window_id == updated_window && v.is_active {
         free_record(v)
         v.is_active = false
@@ -1277,7 +1277,7 @@ main :: proc() {
       for xlib.Pending(display) > 0 {
         xlib.NextEvent(display, &current_event)
         if (current_event.type == xlib.EventType.DestroyNotify) {
-          for &v in records {
+          for &v in window_records {
             if v.is_active && v.window_id == current_event.xdestroywindow.window {
               free_record(v)
               v.is_active = false
@@ -1350,7 +1350,7 @@ main :: proc() {
         sel_y_offset :i32 = 0
         sdl2.SetRenderDrawColor(selector_renderer, 23, 0, 60, 255)
         sdl2.RenderClear(selector_renderer)
-        for v in &records {
+        for v in &window_records {
           rect : sdl2.Rect = {0, sel_y_offset, v.text_width, v.text_height}
           if y_pos > sel_y_offset && y_pos <= (sel_y_offset+v.text_height) && selector_state.focus_state == FocusState.FOCUSED && v.is_active {
             sel_y_offset += v.text_height
@@ -1381,7 +1381,7 @@ main :: proc() {
       border_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
       border_rect_inner : sdl2.Rect = {bar_x_offset+icon_border_width, icon_border_width, icon_size-(icon_border_width*2), icon_size-(icon_border_width*2)}
       icon_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
-      for v in &records {
+      for v in &window_records {
         if v.is_active && v.icon_status_records.texture != nil {
           border_rect.x = bar_x_offset
           border_rect_inner.x = bar_x_offset+icon_border_width
