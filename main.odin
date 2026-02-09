@@ -1335,6 +1335,21 @@ main :: proc() {
           }
         }
 
+        if (current_event.type == xlib.EventType.PropertyNotify &&
+            current_event.xproperty.atom == xlib.InternAtom(display, "_NET_WM_DESKTOP", false)) {
+          // We need to find the window that changed workspaces and update its workspace_id
+          for &v in window_records {
+            if v.window_id == current_event.xproperty.window {
+              workspace_id, workspace_id_ok := get_workspace(display, v.window_id).?
+              if workspace_id_ok {
+                v.workspace_id = workspace_id
+              }
+            }
+          }
+          // Then re-sort it
+          slice.stable_sort_by(window_records[:], cmp_window_record)
+        }
+
         if current_event.type == xlib.EventType.KeyPress {
           if xlib.LookupKeysym(&current_event.xkey, 0) == xlib.KeySym.XK_v {
             libc.system("cd ~/.odinbar && echo 'rebuilding' && make debug")
