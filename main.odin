@@ -172,6 +172,11 @@ init_digits :: proc(renderer: ^sdl2.Renderer) {
   digit_cache.heights[100] = text_height
 }
 
+charset_cst : cstring = "charset"
+family_cst : cstring = "family"
+style_cst : cstring = "style"
+file_cst : cstring = "file"
+
 FcMatrix :: struct {
     xx : c.double,
     xy : c.double,
@@ -795,11 +800,6 @@ get_workspace :: proc(display: ^xlib.Display, window_id: xlib.XID) -> Maybe(i64)
   }
   return (cast(^i64)data)^
 }
-
-charset_cst : cstring = "charset"
-family_cst : cstring = "family"
-style_cst : cstring = "style"
-file_cst : cstring = "file"
 
 get_emoji_font :: proc(text: cstring, offset: i64, window_len: i32, ttf_font: ^^ttf.Font) -> Maybe(i32) {
   p: ^c.uchar = cast(^c.uchar)text
