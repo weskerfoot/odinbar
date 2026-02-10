@@ -1395,11 +1395,22 @@ main :: proc() {
       border_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
       border_rect_inner : sdl2.Rect = {bar_x_offset+icon_border_width, icon_border_width, icon_size-(icon_border_width*2), icon_size-(icon_border_width*2)}
       icon_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, icon_size}
+
+      current_workspace :i64 = 0
       for v in &window_records {
         if v.is_active && v.icon_status_records.texture != nil {
+          if v.workspace_id != current_workspace {
+            current_workspace = v.workspace_id
+            sep_width :i32 = 3
+            sep_rect : sdl2.Rect = {bar_x_offset+5, 0, sep_width, cast(i32)bar_height}
+            bar_x_offset += 10
+            sdl2.SetRenderDrawColor(renderer, 15, 150, 2, 90)
+            sdl2.RenderFillRect(renderer, &sep_rect)
+          }
           border_rect.x = bar_x_offset
           border_rect_inner.x = bar_x_offset+icon_border_width
           icon_rect.x = bar_x_offset
+
           if x_pos > bar_x_offset && x_pos <= (bar_x_offset+icon_size) && bar_state.focus_state == FocusState.FOCUSED {
             sdl2.SetRenderDrawColor(renderer, 255, 0, 0, 90)
             sdl2.RenderFillRect(renderer, &border_rect)
