@@ -40,7 +40,7 @@ WinState :: struct {
 }
 
 icon_size :i32 = 32 // Note that it loads 32x32 icons by default so this matches that
-preferred_font: cstring = "Noto Sans"
+preferred_font: cstring = "Times New Roman"
 
 RenderRecord :: struct {
   surface: ^sdl2.Surface,
@@ -1436,7 +1436,14 @@ main :: proc() {
             bar_state.window_to_switch_to = v.window_id
           }
           else {
-            sdl2.RenderCopy(renderer, v.icon_status_records.texture, nil, &icon_rect)
+            if v.window_id != active_window {
+              sdl2.RenderCopy(renderer, v.icon_status_records.texture, nil, &icon_rect)
+            }
+            else {
+              sdl2.SetRenderDrawColor(renderer, 180, 0, 0, 10)
+              sdl2.RenderFillRect(renderer, &border_rect)
+              sdl2.RenderCopy(renderer, v.icon_status_records.texture, nil, &icon_rect)
+            }
           }
           bar_x_offset += icon_size
         }
