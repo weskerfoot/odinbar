@@ -70,9 +70,9 @@ WindowRecord :: struct {
   window_id: xlib.XID,
   text_width: i32,
   text_height: i32,
-  is_active: bool,
   font: ^ttf.Font,
-  workspace_id: i64
+  workspace_id: i64,
+  is_active: bool
 }
 
 window_records: [dynamic]WindowRecord
@@ -392,9 +392,9 @@ set_record :: proc(display: ^xlib.Display,
                         window_id,
                         text_width,
                         text_height,
-                        true,
                         font,
-                        workspace_id}
+                        workspace_id,
+                        true}
 
   if found_existing_window >= 0 {
     window_records[found_existing_window] = result
