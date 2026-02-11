@@ -109,7 +109,7 @@ free_record :: proc(v: WindowRecord) {
   sdl2.FreeSurface(v.window_selector_records.surface)
   sdl2.DestroyTexture(v.window_status_records.texture)
   sdl2.DestroyTexture(v.icon_status_records.texture)
-  sdl2.DestroyTexture(v.window_selector_records.texture)
+  sdl2.DestroyTexture (v.window_selector_records.texture)
   delete(v.window_name)
   if v.icon_status_records.rwops != nil {
     sdl2.RWclose(v.icon_status_records.rwops)
@@ -318,12 +318,14 @@ set_record :: proc(display: ^xlib.Display,
                    selector_renderer: ^sdl2.Renderer,
                    window_id: xlib.XID) -> Maybe(WindowRecord) {
 
+  root := xlib.DefaultRootWindow(display)
   if window_id == 0 {
     fmt.println("got window_id == 0 in set_record")
     return nil
   }
-  if len(window_records) > 250 {
+  if len(window_records) > 250 { // Once it hits this limit it just won't show any more
     free_records()
+    cache_active_windows(display, root, renderer, selector_renderer)
   }
 
   // If it's already in there find it and free the existing texture/surface first
@@ -418,7 +420,7 @@ free_records :: proc() {
   clear(&window_records)
 }
 
-records_active_windows :: proc(display: ^xlib.Display,
+cache_active_windows :: proc(display: ^xlib.Display,
                              root_window: xlib.XID,
                              renderer: ^sdl2.Renderer,
                              selector_renderer: ^sdl2.Renderer) {
@@ -1168,7 +1170,7 @@ main :: proc() {
                xlib.GrabMode.GrabModeAsync)
 
   // Gets all currently active windows and adds them to the records
-  records_active_windows(display, root, renderer, selector_renderer)
+  cache_active_windows(display, root, renderer, selector_renderer)
 
   init_digits(renderer)
   clock_sep_width := digit_records.widths[100]
