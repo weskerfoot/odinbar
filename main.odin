@@ -556,26 +556,26 @@ get_window_icon_from_file :: proc(display: ^xlib.Display, xid: xlib.XID) -> Mayb
   if !class_name_ok {
     return nil
   }
-  icon_from_name_rwops, icon_from_name_ok := get_icon_from_class_name(hint_return.res_name).?
-  icon_from_class_rwops, icon_from_class_ok := get_icon_from_class_name(hint_return.res_class).?
-  if icon_from_name_ok {
-    surface_result := image.LoadPNG_RW(icon_from_name_rwops)
+  icon_from_name, icon_from_name_ok := get_icon_from_class_name(hint_return.res_name).?
+  icon_from_class, icon_from_class_ok := get_icon_from_class_name(hint_return.res_class).?
+  if icon_from_name_ok && icon_from_name.surface != nil {
     if icon_from_class_ok {
-      sdl2.RWclose(icon_from_class_rwops)
+      sdl2.FreeSurface(icon_from_class.surface)
+      sdl2.RWclose(icon_from_class.rwops)
     }
-    return SDLIcon{surface_result, nil, icon_from_name_rwops}
+    return icon_from_name
   }
-  if icon_from_class_ok {
-    surface_result := image.LoadPNG_RW(icon_from_class_rwops)
+  if icon_from_class_ok && icon_from_class.surface != nil {
     if icon_from_name_ok {
-      sdl2.RWclose(icon_from_name_rwops)
+      sdl2.FreeSurface(icon_from_name.surface)
+      sdl2.RWclose(icon_from_name.rwops)
     }
-    return SDLIcon{surface_result, nil, icon_from_class_rwops}
+    return icon_from_class
   }
   return nil
 }
 
-get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(^sdl2.RWops) {
+get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
   if class_name == "" {
     return nil
   }
@@ -608,6 +608,7 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(^sdl2.RWops) {
 
   icon_path_cst :cstring
   icon_rwops :^sdl2.RWops
+  surface_result :^sdl2.Surface
   defer delete(icon_path_hicolor)
   defer delete(icon_path_locolor)
   defer delete(icon_path_hicolor_scalable)
@@ -615,21 +616,24 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(^sdl2.RWops) {
     icon_path_cst = strings.clone_to_cstring(icon_path_hicolor)
     defer delete(icon_path_cst)
     icon_rwops = sdl2.RWFromFile(icon_path_cst, "rb")
+    surface_result = image.LoadPNG_RW(icon_rwops)
   }
   else if os.is_file(icon_path_locolor) {
     icon_path_cst = strings.clone_to_cstring(icon_path_locolor)
     defer delete(icon_path_cst)
     icon_rwops = sdl2.RWFromFile(icon_path_cst, "rb")
+    surface_result = image.LoadPNG_RW(icon_rwops)
   }
   else if os.is_file(icon_path_hicolor_scalable) {
     icon_path_cst = strings.clone_to_cstring(icon_path_hicolor_scalable)
     defer delete(icon_path_cst)
     icon_rwops = sdl2.RWFromFile(icon_path_cst, "rb")
+    surface_result = image.LoadSVG_RW(icon_rwops)
   }
   else {
     return nil
   }
-  return icon_rwops
+  return SDLIcon{surface_result, nil, icon_rwops}
 }
 
 get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon) {
