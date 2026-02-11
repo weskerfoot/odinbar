@@ -338,6 +338,7 @@ set_record :: proc(fc_config: ^FcConfig,
   for &v in window_records {
     if v.window_id == window_id && v.is_active {
       found_existing_window = i
+      free_record(window_records[found_existing_window])
       break
     }
     i += 1
@@ -398,7 +399,6 @@ set_record :: proc(fc_config: ^FcConfig,
 
   if found_existing_window >= 0 {
     fmt.println("found an existing window")
-    free_record(window_records[found_existing_window])
     window_records[found_existing_window] = result
   }
   else {
