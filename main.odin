@@ -324,7 +324,7 @@ set_record :: proc(fc_config: ^FcConfig,
     fmt.println("got window_id == 0 in set_record")
     return nil
   }
-  if len(window_records) > 250 { // Once it hits this limit it just won't show any more
+  if len(window_records) > 30 { // Once it hits this limit it just won't show any more
     free_records()
     cache_active_windows(fc_config, display, root, renderer, selector_renderer)
   }
@@ -803,58 +803,6 @@ get_workspace :: proc(display: ^xlib.Display, window_id: xlib.XID) -> Maybe(i64)
     return nil
   }
   return (cast(^i64)data)^
-}
-
-get_emoji_font :: proc(text: cstring, offset: i64, window_len: i32, ttf_font: ^^ttf.Font) -> Maybe(i32) {
-  p: ^c.uchar = cast(^c.uchar)text
-  p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + offset))
-  text_len := window_len
-
-  ucs4: c.uint
-  pat := FcNameParse(cast(^c.char)preferred_font)
-  charset := FcCharSetCreate()
-  defer FcCharSetDestroy(charset)
-  fc_result : FcResult
-
-  for p^ != 0 {
-    char_len : c.int = FcUtf8ToUcs4(p, &ucs4, text_len)
-    if char_len <= 0 {
-      break
-    }
-    FcCharSetAddChar(charset, ucs4)
-    text_len -= char_len
-    p = cast(^c.uchar)(cast(uintptr)(cast(i64)cast(uintptr)p + cast(i64)char_len))
-  }
-
-  FcPatternAddCharSet(pat, cast(^u8)charset_cst, charset)
-
-  FcConfigSubstitute(nil, pat, FcMatchKind.FcMatchPattern)
-  FcDefaultSubstitute(pat)
-  defer if pat != nil { FcPatternDestroy(pat) }
-  fs := FcFontSetCreate()
-  defer if fs != nil { FcFontSetDestroy(fs) }
-
-  os := FcObjectSetBuild(cast(^u8)family_cst,
-                         style_cst,
-                         file_cst,
-                         nil)
-
-  defer if os != nil { FcObjectSetDestroy(os) }
-  font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &fc_result)
-  fonts_to_check : [^]^FcPattern = font_patterns.fonts
-
-  // This loop leaks a lot of memory!
-  for i in 0..<font_patterns.nfont {
-    font_pat := FcFontRenderPrepare(nil, pat, fonts_to_check[i])
-    v: FcValue
-    font: ^FcPattern = FcPatternFilter(font_pat, os)
-    FcPatternGet(font, cast(^u8)file_cst, 0, &v)
-    found_font := cast(cstring)v.u.f
-    fmt.println(found_font)
-  }
-
-  defer if font_patterns != nil { FcFontSetDestroy(font_patterns) }
-  return 0
 }
 
 check_text_renders :: proc(text: cstring, ttf_font: ^ttf.Font) -> i32 {
