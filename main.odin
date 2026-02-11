@@ -330,6 +330,8 @@ set_record :: proc(fc_config: ^FcConfig,
   }
   window_text_props, ok_window_props := get_window_name(display, window_id).?
   active_window := cast(cstring)window_text_props.value
+  active_window_st := strings.clone_from_cstring(active_window)
+  defer delete(active_window_st)
   defer xlib.Free(window_text_props.value)
 
   // If it's already in there find it and free the existing texture/surface first
@@ -338,8 +340,13 @@ set_record :: proc(fc_config: ^FcConfig,
   for &v in window_records {
     if v.window_id == window_id && v.is_active {
       found_existing_window = i
-      free_record(window_records[found_existing_window])
-      break
+      if v.window_name == active_window_st {
+        return window_records[found_existing_window]
+      }
+      else {
+        free_record(window_records[found_existing_window])
+        break
+      }
     }
     i += 1
   }
