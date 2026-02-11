@@ -70,7 +70,6 @@ WindowRecord :: struct {
   window_id: xlib.XID,
   text_width: i32,
   text_height: i32,
-  font: ^ttf.Font,
   workspace_id: i64,
   is_active: bool
 }
@@ -135,11 +134,11 @@ DigitRecord :: struct {
 
 digit_records : DigitRecord
 
-init_digits :: proc(renderer: ^sdl2.Renderer) {
+init_digits :: proc(fc_config: ^FcConfig, renderer: ^sdl2.Renderer) {
   white : sdl2.Color = {100, 200, 100, 255}
 
   font: ^ttf.Font
-  get_matching_font("abc123", 7, &font)
+  get_matching_font(fc_config, "abc123", 7, &font)
   if font == nil {
     fmt.panicf("Got a nil font in init_digits")
   }
@@ -260,6 +259,7 @@ foreign fontconfig {
   FcInitLoadConfigAndFonts :: proc() -> ^FcConfig ---
   FcNameParse :: proc(name: ^c.char) -> ^FcPattern ---
   FcConfigSubstitute :: proc(config: ^FcConfig, p: ^FcPattern, kind: FcMatchKind) ---
+  FcConfigDestroy :: proc(config: ^FcConfig) ---
   FcDefaultSubstitute :: proc(pattern: ^FcPattern) ---
   FcFontSetCreate :: proc() -> ^FcFontSet ---
   FcObjectSetBuild :: proc(first: ^c.char, #c_vararg args: ..any) -> ^FcObjectSet ---
@@ -297,7 +297,8 @@ get_attributes :: proc(display: ^xlib.Display,
   return attrs
 }
 
-get_record :: proc(display: ^xlib.Display,
+get_record :: proc(fc_config: ^FcConfig,
+                   display: ^xlib.Display,
                    renderer: ^sdl2.Renderer,
                    selector_renderer: ^sdl2.Renderer,
                    window_id: xlib.XID) -> Maybe(WindowRecord) {
@@ -310,14 +311,14 @@ get_record :: proc(display: ^xlib.Display,
       return v
     }
   }
-  return set_record(display, renderer, selector_renderer, window_id)
+  return set_record(fc_config, display, renderer, selector_renderer, window_id)
 }
 
-set_record :: proc(display: ^xlib.Display,
+set_record :: proc(fc_config: ^FcConfig,
+                   display: ^xlib.Display,
                    renderer: ^sdl2.Renderer,
                    selector_renderer: ^sdl2.Renderer,
                    window_id: xlib.XID) -> Maybe(WindowRecord) {
-
   root := xlib.DefaultRootWindow(display)
   if window_id == 0 {
     fmt.println("got window_id == 0 in set_record")
@@ -325,8 +326,11 @@ set_record :: proc(display: ^xlib.Display,
   }
   if len(window_records) > 250 { // Once it hits this limit it just won't show any more
     free_records()
-    cache_active_windows(display, root, renderer, selector_renderer)
+    cache_active_windows(fc_config, display, root, renderer, selector_renderer)
   }
+  window_text_props, ok_window_props := get_window_name(display, window_id).?
+  active_window := cast(cstring)window_text_props.value
+  defer xlib.Free(window_text_props.value)
 
   // If it's already in there find it and free the existing texture/surface first
   found_existing_window := -1
@@ -334,32 +338,27 @@ set_record :: proc(display: ^xlib.Display,
   for &v in window_records {
     if v.window_id == window_id && v.is_active {
       found_existing_window = i
-      free_record(v)
-      v.is_active = false
       break
     }
     i += 1
   }
 
   white : sdl2.Color = {100, 200, 100, 255}
-  window_text_props, ok_window_props := get_window_name(display, window_id).?
-  win_icon, ok_window_icon := get_window_icon(display, window_id).?
-
-  defer xlib.Free(window_text_props.value)
-
-  if !ok_window_props {
-    return nil
-  }
-
-  active_window := cast(cstring)window_text_props.value
 
   if active_window == "" || active_window == nil {
     return nil
   }
 
+  if !ok_window_props {
+    return nil
+  }
+  win_icon, ok_window_icon := get_window_icon(display, window_id).?
+
   font: ^ttf.Font
   window_name_len := cast(i32)libc.strlen(cast(cstring)active_window)
-  bytes_processed, bytes_processed_ok := get_matching_font(active_window, window_name_len, &font).?
+
+  bytes_processed, bytes_processed_ok := get_matching_font(fc_config, active_window, window_name_len, &font).?
+
   if bytes_processed != window_name_len {
     fmt.println("Couldn't match entire string to font!")
     fmt.println(window_name_len, bytes_processed)
@@ -388,20 +387,22 @@ set_record :: proc(display: ^xlib.Display,
   workspace_id, workspace_id_ok := get_workspace(display, window_id).?
 
   result := WindowRecord{RenderRecord{win_name_surface, win_name_texture},
-                        IconRecord{win_icon.surface, win_icon_texture, win_icon.rwops, win_icon.image_buf},
-                        RenderRecord{win_name_select_surface, win_name_select_texture},
-                        strings.clone_from_cstring(active_window),
-                        window_id,
-                        text_width,
-                        text_height,
-                        font,
-                        workspace_id,
-                        true}
+                         IconRecord{win_icon.surface, win_icon_texture, win_icon.rwops, win_icon.image_buf},
+                         RenderRecord{win_name_select_surface, win_name_select_texture},
+                         strings.clone_from_cstring(active_window),
+                         window_id,
+                         text_width,
+                         text_height,
+                         workspace_id,
+                         true}
 
   if found_existing_window >= 0 {
+    fmt.println("found an existing window")
+    free_record(window_records[found_existing_window])
     window_records[found_existing_window] = result
   }
   else {
+    fmt.println("adding a new window")
     append(&window_records, result)
     // Sort by workspace
     slice.stable_sort_by(window_records[:], cmp_window_record)
@@ -420,7 +421,8 @@ free_records :: proc() {
   clear(&window_records)
 }
 
-cache_active_windows :: proc(display: ^xlib.Display,
+cache_active_windows :: proc(fc_config: ^FcConfig,
+                             display: ^xlib.Display,
                              root_window: xlib.XID,
                              renderer: ^sdl2.Renderer,
                              selector_renderer: ^sdl2.Renderer) {
@@ -464,7 +466,7 @@ cache_active_windows :: proc(display: ^xlib.Display,
     defer xlib.Free(window_text_props.value)
     if text_props_ok {
       fmt.println(cast(cstring)window_text_props.value)
-      set_record(display, renderer, selector_renderer, windows[i])
+      set_record(fc_config, display, renderer, selector_renderer, windows[i])
     }
   }
 }
@@ -664,19 +666,15 @@ get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon)
                          &icon_size_bytes_left,
                          &icon_size_data)
 
+  defer if icon_size_data != nil { xlib.Free(icon_size_data) }
+  defer if icon_data_data != nil { xlib.Free(icon_data_data) }
+
   if icon_size_nitems_return != 2 {
-    if icon_size_data != nil {
-      xlib.Free(icon_size_data)
-    }
     return nil
   }
 
   width := (cast(^int)icon_size_data)^
   height := (cast(^int)((cast(uintptr)icon_size_data) + size_of(int)))^
-
-  if icon_size_data != nil {
-    xlib.Free(icon_size_data)
-  }
 
   pixel_data_size :int = width*height
 
@@ -714,10 +712,6 @@ get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon)
     append(&image_buf, r)
     append(&image_buf, g)
     append(&image_buf, b)
-  }
-
-  if icon_data_data != nil {
-    xlib.Free(icon_data_data)
   }
 
   surface := sdl2.CreateRGBSurfaceFrom(
@@ -780,8 +774,6 @@ get_workspace :: proc(display: ^xlib.Display, window_id: xlib.XID) -> Maybe(i64)
   format_return :i32
   nitems_return, bytes_left :uint = 0, 0
   data :rawptr
-
-  workspace :i64 = -1
 
   root := xlib.DefaultRootWindow(display)
 
@@ -890,7 +882,7 @@ check_text_renders :: proc(text: cstring, ttf_font: ^ttf.Font) -> i32 {
   return bytes_processed
 }
 
-get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) -> Maybe(i32) {
+get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, window_len: i32, ttf_font: ^^ttf.Font) -> Maybe(i32) {
   p: ^c.uchar = cast(^c.uchar)text
   text_len := window_len
 
@@ -925,7 +917,7 @@ get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) 
 
   FcPatternAddCharSet(pat, cast(^u8)charset_cst, charset)
 
-  FcConfigSubstitute(nil, pat, FcMatchKind.FcMatchPattern)
+  FcConfigSubstitute(fc_config, pat, FcMatchKind.FcMatchPattern)
   FcDefaultSubstitute(pat)
   defer if pat != nil { FcPatternDestroy(pat) }
   fs := FcFontSetCreate()
@@ -937,7 +929,7 @@ get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) 
                          nil)
 
   defer if os != nil { FcObjectSetDestroy(os) }
-  font_patterns: ^FcFontSet = FcFontSort(nil, pat, 1, nil, &fc_result)
+  font_patterns: ^FcFontSet = FcFontSort(fc_config, pat, 1, nil, &fc_result)
   fonts_to_check : [^]^FcPattern = font_patterns.fonts
   defer if font_patterns != nil { FcFontSetDestroy(font_patterns) }
 
@@ -945,7 +937,7 @@ get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) 
     fmt.panicf("No fonts configured on your system\n")
   }
 
-  font_pattern: ^FcPattern = FcFontRenderPrepare(nil, pat, font_patterns.fonts^)
+  font_pattern: ^FcPattern = FcFontRenderPrepare(fc_config, pat, font_patterns.fonts^)
 
   if font_pattern != nil {
     FcFontSetAdd(fs, font_pattern)
@@ -958,6 +950,10 @@ get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) 
     if fs.nfont > 0 {
       v: FcValue
       font: ^FcPattern = FcPatternFilter(fs.fonts^, os)
+      defer {
+        fmt.println("freeing fcpattern")
+        FcPatternDestroy(font)
+      }
       FcPatternGet(font, cast(^u8)file_cst, 0, &v)
       if v.u.f != nil {
         found_font := cast(cstring)v.u.f
@@ -979,9 +975,9 @@ get_matching_font :: proc(text: cstring, window_len: i32, ttf_font: ^^ttf.Font) 
         else {
           delete(found_font_st)
         }
-        FcPatternDestroy(font)
       }
     }
+    FcPatternDestroy(fs.fonts^)
   }
   else {
     fmt.panicf("No usable fonts on the system, check the font family")
@@ -1083,6 +1079,7 @@ switch_to_window :: proc(display: ^xlib.Display, window_id: xlib.XID) {
 }
 
 main :: proc() {
+  fc_config: ^FcConfig = FcInitLoadConfigAndFonts()
   display := xlib.OpenDisplay(nil)
   displayHeight := xlib.DisplayHeight(display, 0)
   displayWidth := xlib.DisplayWidth(display, 0)
@@ -1170,9 +1167,9 @@ main :: proc() {
                xlib.GrabMode.GrabModeAsync)
 
   // Gets all currently active windows and adds them to the records
-  cache_active_windows(display, root, renderer, selector_renderer)
+  cache_active_windows(fc_config, display, root, renderer, selector_renderer)
 
-  init_digits(renderer)
+  init_digits(fc_config, renderer)
   clock_sep_width := digit_records.widths[100]
 
   tz, ok_tz := timezone.region_load("America/Toronto")
@@ -1293,12 +1290,6 @@ main :: proc() {
 
         if (current_event.type == xlib.EventType.MapNotify) {
           window_id := current_event.xmap.window
-          root_ret : xlib.XID
-          parent_ret : xlib.XID
-          children_ret : [^]xlib.XID // array of pointers to windows
-          n_children_ret : u32
-          xlib.QueryTree(display, window_id, &root_ret, &parent_ret, &children_ret, &n_children_ret)
-          defer xlib.Free(children_ret)
 
           if selector_state.view_state == ViewState.SHOWING {
             sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
@@ -1309,8 +1300,7 @@ main :: proc() {
           if window_id != 0 { // FIXME check override_redirect instead?
             if attrs_ok {
               if attrs.override_redirect == false {
-                set_record(display, renderer, selector_renderer, window_id)
-                fmt.println("workspace id = ", get_workspace(display, window_id))
+                set_record(fc_config, display, renderer, selector_renderer, window_id)
                 xlib.SelectInput(display,
                                  window_id,
                                  {xlib.EventMaskBits.PropertyChange,
@@ -1331,7 +1321,7 @@ main :: proc() {
                 sdl2.SetWindowSize(sdl_selector_win, get_max_width(), get_max_height())
               }
               if attrs_ok && attrs.override_redirect == false {
-                set_record(display, renderer, selector_renderer, window_id)
+                set_record(fc_config, display, renderer, selector_renderer, window_id)
               }
             }
           }
@@ -1457,7 +1447,7 @@ main :: proc() {
       }
 
       if ok_window {
-        active_record, selector_active_ok := get_record(display, renderer, selector_renderer, active_window).?
+        active_record, selector_active_ok := get_record(fc_config, display, renderer, selector_renderer, active_window).?
         if selector_active_ok {
           sep_width :i32 = 3
           sep_rect : sdl2.Rect = {bar_x_offset+5, 0, sep_width, cast(i32)bar_height}
@@ -1495,6 +1485,6 @@ main :: proc() {
       sdl2.RenderPresent(renderer)
       sdl2.Delay(8)
   }
-
+  FcConfigDestroy(fc_config)
   free_records()
 }
