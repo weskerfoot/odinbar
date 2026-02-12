@@ -340,11 +340,14 @@ set_record :: proc(fc_config: ^FcConfig,
   for &v in window_records {
     if v.window_id == window_id && v.is_active {
       found_existing_window = i
-      if v.window_name == active_window_st {
+      if v.window_name == active_window_st && v.is_active {
         return window_records[found_existing_window]
       }
       else {
-        free_record(window_records[found_existing_window])
+        if v.is_active {
+          free_record(window_records[found_existing_window])
+          v.is_active = false
+        }
         break
       }
     }
