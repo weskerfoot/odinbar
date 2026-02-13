@@ -39,7 +39,9 @@ WinState :: struct {
   window_to_switch_to: Maybe(xlib.XID)
 }
 
-icon_size :i32 = 32 // Note that it loads 32x32 icons by default so this matches that
+icon_size :i32 = 42 // Note that it loads 64x64 icons by default so this matches that
+font_size :i32 = 26 // Used for all text
+
 preferred_font: cstring = "Times New Roman"
 
 RenderRecord :: struct {
@@ -133,6 +135,13 @@ DigitRecord :: struct {
 }
 
 digit_records : DigitRecord
+
+DateRecord :: struct {
+  texture: ^sdl2.Texture,
+  surface: ^sdl2.Surface
+}
+
+date_record : DateRecord
 
 init_digits :: proc(fc_config: ^FcConfig, renderer: ^sdl2.Renderer) {
   white : sdl2.Color = {100, 200, 100, 255}
@@ -593,10 +602,10 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
   desktop_filepath := strings.concatenate({"/usr/share/applications/", class_name_st, ".desktop"})
   defer delete(class_name_st)
   defer delete(desktop_filepath)
-	data, ok_desktop := os.read_entire_file(desktop_filepath)
+	data, err_desktop := os.read_entire_file_from_path(desktop_filepath, context.allocator)
 	defer delete(data)
 
-	if !ok_desktop {
+	if err_desktop != nil {
 		return nil
 	}
 
@@ -613,7 +622,9 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
   }
 
   icon_path_hicolor_scalable := strings.concatenate({"/usr/share/icons/hicolor/scalable/apps/", class_name_st, ".svg"})
-  icon_path_hicolor := strings.concatenate({"/usr/share/icons/hicolor/32x32/apps/", class_name_st, ".png"})
+
+  // FIXME, look for 64x64 then 32x32
+  icon_path_hicolor := strings.concatenate({"/usr/share/icons/hicolor/64x64/apps/", class_name_st, ".png"})
   icon_path_locolor := strings.concatenate({"/usr/share/icons/locolor/32x32/apps/", class_name_st, ".png"})
 
   icon_path_cst :cstring
@@ -931,7 +942,7 @@ get_matching_font :: proc(fc_config: ^FcConfig, text: cstring, window_len: i32, 
         }
         if !found_font_record {
           fmt.println("font records miss")
-          ttf_font^ = ttf.OpenFont(found_font, 18)
+          ttf_font^ = ttf.OpenFont(found_font, font_size)
           append(&font_records, FontRecord{found_font_st, ttf_font^})
         }
         else {
