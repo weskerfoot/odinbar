@@ -138,13 +138,15 @@ digit_records : DigitRecord
 
 DateRecord :: struct {
   texture: ^sdl2.Texture,
-  surface: ^sdl2.Surface
+  surface: ^sdl2.Surface,
+  width: i32,
+  height: i32
 }
 
 date_record : DateRecord
 
 init_digits :: proc(fc_config: ^FcConfig, renderer: ^sdl2.Renderer) {
-  white : sdl2.Color = {100, 200, 100, 255}
+  green : sdl2.Color = {100, 200, 100, 255}
 
   font: ^ttf.Font
   get_matching_font(fc_config, "abc123", 7, &font)
@@ -164,7 +166,7 @@ init_digits :: proc(fc_config: ^FcConfig, renderer: ^sdl2.Renderer) {
     num_st = strings.clone_to_cstring(concatenated)
     defer delete(num_st)
     ttf.SizeUTF8(font, num_st, &text_width, &text_height)
-    digit_records.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
+    digit_records.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, green)
     digit_records.textures[i] = sdl2.CreateTextureFromSurface(renderer, digit_records.surfaces[i])
     digit_records.widths[i] = text_width
     digit_records.heights[i] = text_height
@@ -173,14 +175,14 @@ init_digits :: proc(fc_config: ^FcConfig, renderer: ^sdl2.Renderer) {
     num_st = strings.clone_to_cstring(strconv.write_int(c, cast(i64)i, 10))
     defer delete(num_st)
     ttf.SizeUTF8(font, num_st, &text_width, &text_height)
-    digit_records.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, white)
+    digit_records.surfaces[i] = ttf.RenderUTF8_Solid(font, num_st, green)
     digit_records.textures[i] = sdl2.CreateTextureFromSurface(renderer, digit_records.surfaces[i])
     digit_records.widths[i] = text_width
     digit_records.heights[i] = text_height
   }
 
   ttf.SizeUTF8(font, ":", &text_width, &text_height)
-  digit_records.surfaces[100] = ttf.RenderUTF8_Solid(font, ":", white)
+  digit_records.surfaces[100] = ttf.RenderUTF8_Solid(font, ":", green)
   digit_records.textures[100] = sdl2.CreateTextureFromSurface(renderer, digit_records.surfaces[100])
   digit_records.widths[100] = text_width
   digit_records.heights[100] = text_height
@@ -363,7 +365,7 @@ set_record :: proc(fc_config: ^FcConfig,
     i += 1
   }
 
-  white : sdl2.Color = {100, 200, 100, 255}
+  green : sdl2.Color = {100, 200, 100, 255}
 
   if active_window == "" || active_window == nil {
     return nil
@@ -387,10 +389,10 @@ set_record :: proc(fc_config: ^FcConfig,
     fmt.panicf("Font was nil")
   }
 
-  win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
+  win_name_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, green)
   win_name_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(renderer, win_name_surface)
 
-  win_name_select_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, white)
+  win_name_select_surface : ^sdl2.Surface = ttf.RenderUTF8_Solid(font, active_window, green)
   win_name_select_texture : ^sdl2.Texture = sdl2.CreateTextureFromSurface(selector_renderer, win_name_surface)
 
   win_icon_texture : ^sdl2.Texture
@@ -1052,7 +1054,11 @@ switch_to_window :: proc(display: ^xlib.Display, window_id: xlib.XID) {
 }
 
 main :: proc() {
+  date_buf : [11]u8
+  current_day :int = -1
+
   fc_config: ^FcConfig = FcInitLoadConfigAndFonts()
+
   display := xlib.OpenDisplay(nil)
   displayHeight := xlib.DisplayHeight(display, 0)
   displayWidth := xlib.DisplayWidth(display, 0)
@@ -1121,7 +1127,8 @@ main :: proc() {
   event : sdl2.Event
 
   ttf.Init()
-  white : sdl2.Color = {255, 0, 0, 255}
+  green : sdl2.Color = {100, 200, 100, 255}
+  red : sdl2.Color = {100, 0, 0, 255}
 
   current_event : xlib.XEvent
 
@@ -1170,6 +1177,9 @@ main :: proc() {
   icon_border_max :i32 = 8 // Maximum size of border for icons
   icon_fade_n :i32 = 0 // Counter to control fade-in effect
   icon_fade_delay :i32 = 3 // Controls how fast the fade-in is
+
+  date_font: ^ttf.Font
+  get_matching_font(fc_config, "abc123", 7, &date_font)
 
   for running {
       for sdl2.PollEvent(&event) != false {
@@ -1439,8 +1449,27 @@ main :: proc() {
       hour := dt_with_tz.hour
       minute := dt_with_tz.minute
       second := dt_with_tz.second
+      now := time.now()
+
+      if time.day(now) != current_day {
+        // Update the date stamp, the day is different
+        text_width, text_height : i32
+        current_day = time.day(now)
+        date_st := time.to_string_yyyy_mm_dd(now, date_buf[:])
+        date_cst := strings.clone_to_cstring(cast(string)date_buf[:])
+        ttf.SizeUTF8(date_font, date_cst, &text_width, &text_height)
+        defer delete(date_cst)
+        fmt.println(date_st)
+        date_record.surface = ttf.RenderUTF8_Solid(date_font, date_cst, red)
+        date_record.texture = sdl2.CreateTextureFromSurface(renderer, date_record.surface)
+        date_record.width = text_width
+        date_record.height = text_height
+      }
 
       clock_offset := screen_width - (digit_records.widths[hour] + digit_records.widths[minute] + digit_records.widths[second] + clock_sep_width*2)
+      date_rect : sdl2.Rect = {clock_offset - date_record.width - 10, 0, date_record.width, date_record.height}
+
+      sdl2.RenderCopy(renderer, date_record.texture, nil, &date_rect)
 
       if hour >= 0 && hour <= 60 && minute >= 0 && minute <= 60 && second >= 0 && second <= 60 {
         num_rect_hour : sdl2.Rect = {clock_offset, 0, digit_records.widths[hour], digit_records.heights[hour]}
