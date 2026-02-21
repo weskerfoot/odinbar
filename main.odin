@@ -1128,7 +1128,7 @@ main :: proc() {
 
   ttf.Init()
   green : sdl2.Color = {100, 200, 100, 255}
-  red : sdl2.Color = {100, 0, 0, 255}
+  red : sdl2.Color = {200, 0, 0, 255}
 
   current_event : xlib.XEvent
 
