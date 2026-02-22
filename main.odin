@@ -1054,6 +1054,8 @@ switch_to_window :: proc(display: ^xlib.Display, window_id: xlib.XID) {
 }
 
 main :: proc() {
+  date_record.texture = nil
+  date_record.surface = nil
   date_buf : [11]u8
   current_day :int = -1
 
@@ -1460,6 +1462,13 @@ main :: proc() {
         ttf.SizeUTF8(date_font, date_cst, &text_width, &text_height)
         defer delete(date_cst)
         fmt.println(date_st)
+
+        if date_record.surface != nil {
+          sdl2.FreeSurface(date_record.surface)
+        }
+        if date_record.texture != nil {
+          sdl2.DestroyTexture(date_record.texture)
+        }
         date_record.surface = ttf.RenderUTF8_Solid(date_font, date_cst, red)
         date_record.texture = sdl2.CreateTextureFromSurface(renderer, date_record.surface)
         date_record.width = text_width
