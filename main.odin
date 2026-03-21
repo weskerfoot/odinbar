@@ -19,6 +19,9 @@ import "vendor:sdl2/ttf"
 import "vendor:x11/xlib"
 foreign import fontconfig "system:fontconfig"
 
+green : sdl2.Color = {100, 200, 100, 255}
+red : sdl2.Color = {200, 0, 0, 255}
+
 XA_CARDINAL : xlib.Atom = 6
 XA_WINDOW : xlib.Atom = 33
 
@@ -146,8 +149,6 @@ DateRecord :: struct {
 date_record : DateRecord
 
 init_digits :: proc(fc_config: ^FcConfig, renderer: ^sdl2.Renderer) {
-  green : sdl2.Color = {100, 200, 100, 255}
-
   font: ^ttf.Font
   get_matching_font(fc_config, "abc123", 7, &font)
   if font == nil {
@@ -364,8 +365,6 @@ set_record :: proc(fc_config: ^FcConfig,
     }
     i += 1
   }
-
-  green : sdl2.Color = {100, 200, 100, 255}
 
   if active_window == "" || active_window == nil {
     return nil
@@ -1129,8 +1128,6 @@ main :: proc() {
   event : sdl2.Event
 
   ttf.Init()
-  green : sdl2.Color = {100, 200, 100, 255}
-  red : sdl2.Color = {200, 0, 0, 255}
 
   current_event : xlib.XEvent
 
@@ -1182,7 +1179,8 @@ main :: proc() {
 
   date_font: ^ttf.Font
   get_matching_font(fc_config, "abc123", 7, &date_font)
-
+  defer FcConfigDestroy(fc_config)
+  defer free_records()
   for running {
       for sdl2.PollEvent(&event) != false {
           if event.type == sdl2.EventType.QUIT {
@@ -1496,6 +1494,4 @@ main :: proc() {
       sdl2.RenderPresent(renderer)
       sdl2.Delay(8)
   }
-  FcConfigDestroy(fc_config)
-  free_records()
 }
