@@ -751,17 +751,10 @@ get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon)
                          &icon_data_data)
 
   if icon_data_data == nil {
-<<<<<<< HEAD
-    return nil
-  }
-
-=======
-    fmt.println("icon_data_data was nil")
     return nil
   }
 
   iter_data := cast([^]u64)icon_data_data
->>>>>>> 9b51b36 (wip using wm hints to get icon, fix edge case in getting icon)
   mask : u64 = 0x00000000000000FF
   image_buf : [dynamic]u8
 
