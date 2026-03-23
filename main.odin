@@ -569,6 +569,39 @@ get_window_class :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(xlib.XC
   return hint_return
 }
 
+get_window_icon_from_hints :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon) {
+  hints := xlib.GetWMHints(display, xid)
+  if hints == nil {
+    return nil
+  }
+  defer xlib.Free(hints)
+  flags := hints.flags
+  if xlib.WMHintsBits.IconPixmapHint in flags {
+    icon_pixmap := hints.icon_pixmap
+    x, y: i32
+    width, height: u32
+    border_sz: u32
+    depth: u32
+    root_return: xlib.XID
+    geometry_status := xlib.GetGeometry(
+      display,
+      hints.icon_pixmap,
+      &root_return,
+      &x,
+      &y,
+      &width,
+      &height,
+      &border_sz,
+      &depth
+    )
+    fmt.println(x, y, width, height)
+  }
+  else if xlib.WMHintsBits.IconWindowHint in flags {
+    icon_window := hints.icon_window
+  }
+  return nil
+}
+
 get_window_icon_from_file :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon) {
   hint_return, class_name_ok := get_window_class(display, xid).?
   defer xlib.Free(cast(rawptr)hint_return.res_name)
@@ -721,11 +754,6 @@ get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon)
     return nil
   }
 
-  if cast(i64)icon_data_bytes_left > 0 {
-    return nil
-  }
-
-  iter_data := cast([^]u64)icon_data_data
   mask : u64 = 0x00000000000000FF
   image_buf : [dynamic]u8
 
