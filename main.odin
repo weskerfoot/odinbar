@@ -76,6 +76,7 @@ WindowRecord :: struct {
   text_width: i32,
   text_height: i32,
   workspace_id: i64,
+  duplicate_number: i32,
   is_active: bool
 }
 
@@ -331,6 +332,7 @@ set_record :: proc(fc_config: ^FcConfig,
                    renderer: ^sdl2.Renderer,
                    selector_renderer: ^sdl2.Renderer,
                    window_id: xlib.XID) -> Maybe(WindowRecord) {
+  duplicate_number: i32 = 1
   root := xlib.DefaultRootWindow(display)
   if window_id == 0 {
     fmt.println("got window_id == 0 in set_record")
@@ -362,6 +364,12 @@ set_record :: proc(fc_config: ^FcConfig,
         }
         break
       }
+    }
+    if strings.contains(active_window_st, v.window_name) {
+      duplicate_number += 1
+    }
+    else {
+      fmt.println(active_window_st, v.window_name)
     }
     i += 1
   }
@@ -415,6 +423,7 @@ set_record :: proc(fc_config: ^FcConfig,
                          text_width,
                          text_height,
                          workspace_id,
+                         duplicate_number,
                          true}
 
   if found_existing_window >= 0 {
@@ -597,6 +606,7 @@ get_window_icon_from_hints :: proc(display: ^xlib.Display, xid: xlib.XID) -> May
     fmt.println(x, y, width, height)
   }
   else if xlib.WMHintsBits.IconWindowHint in flags {
+    fmt.println("icon is in a window")
     //icon_window := hints.icon_window
   }
   return nil
@@ -692,6 +702,7 @@ get_icon_from_class_name :: proc(class_name: cstring) -> Maybe(SDLIcon) {
 }
 
 get_window_icon :: proc(display: ^xlib.Display, xid: xlib.XID) -> Maybe(SDLIcon) {
+  get_window_icon_from_hints(display, xid)
   window_icon, window_icon_ok := get_window_icon_from_file(display, xid).?
   if window_icon_ok && window_icon.surface != nil {
     return window_icon
@@ -1366,7 +1377,7 @@ main :: proc() {
       sdl2.GetMouseState(&x_pos, &y_pos)
       if selector_state.view_state == ViewState.SHOWING {
         sel_y_offset :i32 = 0
-        sdl2.SetRenderDrawColor(selector_renderer, 23, 0, 60, 255)
+        sdl2.SetRenderDrawColor(selector_renderer, 0, 0, 0, 255)
         sdl2.RenderClear(selector_renderer)
         for v in &window_records {
           rect : sdl2.Rect = {0, sel_y_offset, v.text_width, v.text_height}
@@ -1408,9 +1419,16 @@ main :: proc() {
             sep_width :i32 = 3
             sep_rect : sdl2.Rect = {bar_x_offset+5, 0, sep_width, cast(i32)bar_height}
             bar_x_offset += 10
-            sdl2.SetRenderDrawColor(renderer, 15, 150, 2, 90)
+            sdl2.SetRenderDrawColor(renderer, 0, 150, 2, 90)
             sdl2.RenderFillRect(renderer, &sep_rect)
           }
+          current_workspace = v.workspace_id
+          if v.duplicate_number > 1 {
+            sep_rect : sdl2.Rect = {bar_x_offset, 0, icon_size, 3}
+            sdl2.SetRenderDrawColor(renderer, 0, cast(u8)(v.duplicate_number*100), 2, 90)
+            sdl2.RenderFillRect(renderer, &sep_rect)
+          }
+
           border_rect.x = bar_x_offset
           border_rect_inner.x = bar_x_offset+icon_border_width
           icon_rect.x = bar_x_offset
@@ -1444,7 +1462,7 @@ main :: proc() {
               sdl2.RenderCopy(renderer, v.icon_status_records.texture, nil, &icon_rect)
             }
             else {
-              sdl2.SetRenderDrawColor(renderer, 180, 0, 0, 10)
+              sdl2.SetRenderDrawColor(renderer, 200, 50, 50, 10)
               sdl2.RenderFillRect(renderer, &border_rect)
               sdl2.RenderCopy(renderer, v.icon_status_records.texture, nil, &icon_rect)
             }
