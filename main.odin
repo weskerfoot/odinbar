@@ -122,7 +122,7 @@ get_ssh_config :: proc(ssh_entries: ^[dynamic]string) -> []u8 {
   defer posix.wordfree(&ssh_wordexp)
   expanded_st := strings.clone_from_cstring(ssh_path_expanded)
   defer delete(expanded_st)
-	data, ok := os.read_entire_file_from_path(expanded_st, context.allocator)
+  data, ok := os.read_entire_file_from_path(expanded_st, context.allocator)
   it := string(data)
   for line in strings.split_lines_iterator(&it) {
     if strings.has_prefix(line, "Host ") {
