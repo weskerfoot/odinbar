@@ -108,6 +108,30 @@ get_max_height :: proc() -> i32 {
   return (max_height + 10) * count_active
 }
 
+get_ssh_config :: proc(ssh_entries: ^[dynamic]string) -> []u8 {
+  ssh_wordexp :posix.wordexp_t
+  ssh_path_cst :cstring = "~/.ssh/config"
+  posix.wordexp(ssh_path_cst, &ssh_wordexp, {})
+  ssh_path_expanded :cstring
+  if ssh_wordexp.we_wordc >= 1 {
+    ssh_path_expanded = ssh_wordexp.we_wordv[0]
+  }
+  else {
+    ssh_path_expanded = ssh_path_cst
+  }
+  defer posix.wordfree(&ssh_wordexp)
+  expanded_st := strings.clone_from_cstring(ssh_path_expanded)
+  defer delete(expanded_st)
+	data, ok := os.read_entire_file_from_path(expanded_st, context.allocator)
+  it := string(data)
+  for line in strings.split_lines_iterator(&it) {
+    if strings.has_prefix(line, "Host ") {
+      append(ssh_entries, line[5:])
+    }
+  }
+  return data
+}
+
 free_record :: proc(v: WindowRecord) {
   sdl2.FreeSurface(v.window_status_records.surface)
   sdl2.FreeSurface(v.icon_status_records.surface)
@@ -1093,6 +1117,13 @@ switch_to_window :: proc(display: ^xlib.Display, window_id: xlib.XID) {
 }
 
 main :: proc() {
+  ssh_entries: [dynamic]string
+  ssh_config_data := get_ssh_config(&ssh_entries)
+  defer delete(ssh_config_data)
+
+  for entry in ssh_entries {
+    fmt.println(entry)
+  }
   date_record.texture = nil
   date_record.surface = nil
   date_buf : [11]u8
