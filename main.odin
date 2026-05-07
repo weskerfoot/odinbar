@@ -850,6 +850,10 @@ get_active_window :: proc(display: ^xlib.Display) -> Maybe(xlib.XID) {
     return nil
   }
 
+  if data == nil {
+    return nil
+  }
+
   window_id := (cast(^xlib.XID)data)^
   if window_id == 0 {
     return nil
